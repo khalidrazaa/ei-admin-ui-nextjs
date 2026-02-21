@@ -1,0 +1,654 @@
+[00:00:01.442] Server  LOG     ✓ Ready in 1135ms
+[00:00:02.572] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[00:00:22.217] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[00:00:35.935] Server  ERROR   ⨯ ./src/app/trends/page.tsx:4:1
+Module not found: Can't resolve '../../../lib/services/keyword'
+  2 |
+  3 | import { useState, useEffect } from "react";
+> 4 | import { getKeywords, scrapeTrends, getTrendsData } from "../../../lib/services/keyword";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | import { Trend } from "../../../types/types";
+  6 |
+  7 | export default function TrendsPage() {
+
+
+
+Import traces:
+  Client Component Browser:
+    ./src/app/trends/page.tsx [Client Component Browser]
+    ./src/app/trends/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/trends/page.tsx [Client Component SSR]
+    ./src/app/trends/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+[00:00:36.120] Browser ERROR   ./src/app/trends/page.tsx:4:1
+Module not found: Can't resolve '../../../lib/services/keyword'
+  2 |
+  3 | import { useState, useEffect } from "react";
+> 4 | import { getKeywords, scrapeTrends, getTrendsData } from "../../../lib/services/keyword";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | import { Trend } from "../../../types/types";
+  6 |
+  7 | export default function TrendsPage() {
+
+Import traces:
+  Client Component Browser:
+    ./src/app/trends/page.tsx [Client Component Browser]
+    ./src/app/trends/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/trends/page.tsx [Client Component SSR]
+    ./src/app/trends/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+[00:00:37.149] Browser ERROR   ./src/app/trends/page.tsx:4:1
+Module not found: Can't resolve '../../../lib/services/keyword'
+  2 |
+  3 | import { useState, useEffect } from "react";
+> 4 | import { getKeywords, scrapeTrends, getTrendsData } from "../../../lib/services/keyword";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | import { Trend } from "../../../types/types";
+  6 |
+  7 | export default function TrendsPage() {
+
+Import traces:
+  Client Component Browser:
+    ./src/app/trends/page.tsx [Client Component Browser]
+    ./src/app/trends/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/trends/page.tsx [Client Component SSR]
+    ./src/app/trends/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+[00:00:37.325] Browser ERROR   ./src/app/trends/page.tsx:4:1
+Module not found: Can't resolve '../../../lib/services/keyword'
+  2 |
+  3 | import { useState, useEffect } from "react";
+> 4 | import { getKeywords, scrapeTrends, getTrendsData } from "../../../lib/services/keyword";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | import { Trend } from "../../../types/types";
+  6 |
+  7 | export default function TrendsPage() {
+
+Import traces:
+  Client Component Browser:
+    ./src/app/trends/page.tsx [Client Component Browser]
+    ./src/app/trends/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/trends/page.tsx [Client Component SSR]
+    ./src/app/trends/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+[00:00:37.823] Browser ERROR   ./src/app/trends/page.tsx:4:1
+Module not found: Can't resolve '../../../lib/services/keyword'
+  2 |
+  3 | import { useState, useEffect } from "react";
+> 4 | import { getKeywords, scrapeTrends, getTrendsData } from "../../../lib/services/keyword";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | import { Trend } from "../../../types/types";
+  6 |
+  7 | export default function TrendsPage() {
+
+Import traces:
+  Client Component Browser:
+    ./src/app/trends/page.tsx [Client Component Browser]
+    ./src/app/trends/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/trends/page.tsx [Client Component SSR]
+    ./src/app/trends/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+[00:00:37.852] Server  ERROR   ⨯ ./src/app/trends/page.tsx:4:1
+Module not found: Can't resolve '../../../lib/services/keyword'
+  2 |
+  3 | import { useState, useEffect } from "react";
+> 4 | import { getKeywords, scrapeTrends, getTrendsData } from "../../../lib/services/keyword";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | import { Trend } from "../../../types/types";
+  6 |
+  7 | export default function TrendsPage() {
+
+
+
+Import traces:
+  Client Component Browser:
+    ./src/app/trends/page.tsx [Client Component Browser]
+    ./src/app/trends/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/trends/page.tsx [Client Component SSR]
+    ./src/app/trends/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+[00:00:38.408] Browser ERROR   uncaughtError: Error: ./src/app/trends/page.tsx:4:1
+Module not found: Can't resolve '../../../lib/services/keyword'
+  2 |
+  3 | import { useState, useEffect } from "react";
+> 4 | import { getKeywords, scrapeTrends, getTrendsData } from "../../../lib/services/keyword";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | import { Trend } from "../../../types/types";
+  6 |
+  7 | export default function TrendsPage() {
+
+
+
+Import traces:
+  Client Component Browser:
+    ./src/app/trends/page.tsx [Client Component Browser]
+    ./src/app/trends/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/trends/page.tsx [Client Component SSR]
+    ./src/app/trends/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+[00:00:38.527] Browser ERROR   ./src/app/trends/page.tsx:4:1
+Module not found: Can't resolve '../../../lib/services/keyword'
+  2 |
+  3 | import { useState, useEffect } from "react";
+> 4 | import { getKeywords, scrapeTrends, getTrendsData } from "../../../lib/services/keyword";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | import { Trend } from "../../../types/types";
+  6 |
+  7 | export default function TrendsPage() {
+
+Import traces:
+  Client Component Browser:
+    ./src/app/trends/page.tsx [Client Component Browser]
+    ./src/app/trends/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/trends/page.tsx [Client Component SSR]
+    ./src/app/trends/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+[00:00:38.685] Browser ERROR   ./src/app/trends/page.tsx:4:1
+Module not found: Can't resolve '../../../lib/services/keyword'
+  2 |
+  3 | import { useState, useEffect } from "react";
+> 4 | import { getKeywords, scrapeTrends, getTrendsData } from "../../../lib/services/keyword";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | import { Trend } from "../../../types/types";
+  6 |
+  7 | export default function TrendsPage() {
+
+Import traces:
+  Client Component Browser:
+    ./src/app/trends/page.tsx [Client Component Browser]
+    ./src/app/trends/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/trends/page.tsx [Client Component SSR]
+    ./src/app/trends/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+[00:01:11.725] Browser ERROR   ./src/app/trends/page.tsx:4:1
+Module not found: Can't resolve '../../../lib/services/keyword'
+  2 |
+  3 | import { useState, useEffect } from "react";
+> 4 | import { getKeywords, scrapeTrends, getTrendsData } from "../../../lib/services/keyword";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | import { Trend } from "../../../types/types";
+  6 |
+  7 | export default function TrendsPage() {
+
+Import traces:
+  Client Component Browser:
+    ./src/app/trends/page.tsx [Client Component Browser]
+    ./src/app/trends/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/trends/page.tsx [Client Component SSR]
+    ./src/app/trends/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+[00:01:30.978] Server  ERROR   ⨯ ./src/app/trends/page.tsx:4:1
+Module not found: Can't resolve '../../../lib/services/keyword'
+  2 |
+  3 | import { useState, useEffect } from "react";
+> 4 | import { getKeywords, scrapeTrends, getTrendsData } from "../../../lib/services/keyword";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | import { Trend } from "../../../types/types";
+  6 |
+  7 | export default function TrendsPage() {
+
+
+
+Import traces:
+  Client Component Browser:
+    ./src/app/trends/page.tsx [Client Component Browser]
+    ./src/app/trends/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/trends/page.tsx [Client Component SSR]
+    ./src/app/trends/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+[00:01:31.131] Server  LOG     ✓ Compiled in 287ms
+[00:01:31.201] Server  ERROR   ⨯ ./src/app/trends/page.tsx:4:1
+Module not found: Can't resolve '../../../lib/services/keyword'
+  2 |
+  3 | import { useState, useEffect } from "react";
+> 4 | import { getKeywords, scrapeTrends, getTrendsData } from "../../../lib/services/keyword";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | import { Trend } from "../../../types/types";
+  6 |
+  7 | export default function TrendsPage() {
+
+
+
+Import traces:
+  Client Component Browser:
+    ./src/app/trends/page.tsx [Client Component Browser]
+    ./src/app/trends/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/trends/page.tsx [Client Component SSR]
+    ./src/app/trends/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+[00:01:32.153] Browser ERROR   uncaughtError: Error: ./src/app/trends/page.tsx:4:1
+Module not found: Can't resolve '../../../lib/services/keyword'
+  2 |
+  3 | import { useState, useEffect } from "react";
+> 4 | import { getKeywords, scrapeTrends, getTrendsData } from "../../../lib/services/keyword";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | import { Trend } from "../../../types/types";
+  6 |
+  7 | export default function TrendsPage() {
+
+
+
+Import traces:
+  Client Component Browser:
+    ./src/app/trends/page.tsx [Client Component Browser]
+    ./src/app/trends/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/trends/page.tsx [Client Component SSR]
+    ./src/app/trends/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+[00:01:32.393] Browser ERROR   ./src/app/trends/page.tsx:4:1
+Module not found: Can't resolve '../../../lib/services/keyword'
+  2 |
+  3 | import { useState, useEffect } from "react";
+> 4 | import { getKeywords, scrapeTrends, getTrendsData } from "../../../lib/services/keyword";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | import { Trend } from "../../../types/types";
+  6 |
+  7 | export default function TrendsPage() {
+
+Import traces:
+  Client Component Browser:
+    ./src/app/trends/page.tsx [Client Component Browser]
+    ./src/app/trends/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/trends/page.tsx [Client Component SSR]
+    ./src/app/trends/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+[00:01:32.393] Browser ERROR   ./src/app/trends/page.tsx:4:1
+Module not found: Can't resolve '../../../lib/services/keyword'
+  2 |
+  3 | import { useState, useEffect } from "react";
+> 4 | import { getKeywords, scrapeTrends, getTrendsData } from "../../../lib/services/keyword";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | import { Trend } from "../../../types/types";
+  6 |
+  7 | export default function TrendsPage() {
+
+Import traces:
+  Client Component Browser:
+    ./src/app/trends/page.tsx [Client Component Browser]
+    ./src/app/trends/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/trends/page.tsx [Client Component SSR]
+    ./src/app/trends/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+[00:01:43.003] Server  ERROR   ⨯ ./src/app/trends/page.tsx:4:1
+Module not found: Can't resolve '../../../lib/services/keyword'
+  2 |
+  3 | import { useState, useEffect } from "react";
+> 4 | import { getKeywords, scrapeTrends, getTrendsData } from "../../../lib/services/keyword";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | import { Trend } from "../../../types/types";
+  6 |
+  7 | export default function TrendsPage() {
+
+
+
+Import traces:
+  Client Component Browser:
+    ./src/app/trends/page.tsx [Client Component Browser]
+    ./src/app/trends/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/trends/page.tsx [Client Component SSR]
+    ./src/app/trends/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+[00:01:43.020] Server  LOG     ✓ Compiled in 118ms
+[00:01:43.195] Server  ERROR   ⨯ ./src/app/trends/page.tsx:4:1
+Module not found: Can't resolve '../../../lib/services/keyword'
+  2 |
+  3 | import { useState, useEffect } from "react";
+> 4 | import { getKeywords, scrapeTrends, getTrendsData } from "../../../lib/services/keyword";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | import { Trend } from "../../../types/types";
+  6 |
+  7 | export default function TrendsPage() {
+
+
+
+Import traces:
+  Client Component Browser:
+    ./src/app/trends/page.tsx [Client Component Browser]
+    ./src/app/trends/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/trends/page.tsx [Client Component SSR]
+    ./src/app/trends/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+[00:01:43.267] Browser ERROR   ./src/app/trends/page.tsx:4:1
+Module not found: Can't resolve '../../../lib/services/keyword'
+  2 |
+  3 | import { useState, useEffect } from "react";
+> 4 | import { getKeywords, scrapeTrends, getTrendsData } from "../../../lib/services/keyword";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | import { Trend } from "../../../types/types";
+  6 |
+  7 | export default function TrendsPage() {
+
+Import traces:
+  Client Component Browser:
+    ./src/app/trends/page.tsx [Client Component Browser]
+    ./src/app/trends/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/trends/page.tsx [Client Component SSR]
+    ./src/app/trends/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+[00:01:43.267] Browser ERROR   ./src/app/trends/page.tsx:4:1
+Module not found: Can't resolve '../../../lib/services/keyword'
+  2 |
+  3 | import { useState, useEffect } from "react";
+> 4 | import { getKeywords, scrapeTrends, getTrendsData } from "../../../lib/services/keyword";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | import { Trend } from "../../../types/types";
+  6 |
+  7 | export default function TrendsPage() {
+
+Import traces:
+  Client Component Browser:
+    ./src/app/trends/page.tsx [Client Component Browser]
+    ./src/app/trends/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/trends/page.tsx [Client Component SSR]
+    ./src/app/trends/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+[00:01:43.850] Browser ERROR   uncaughtError: Error: ./src/app/trends/page.tsx:4:1
+Module not found: Can't resolve '../../../lib/services/keyword'
+  2 |
+  3 | import { useState, useEffect } from "react";
+> 4 | import { getKeywords, scrapeTrends, getTrendsData } from "../../../lib/services/keyword";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | import { Trend } from "../../../types/types";
+  6 |
+  7 | export default function TrendsPage() {
+
+
+
+Import traces:
+  Client Component Browser:
+    ./src/app/trends/page.tsx [Client Component Browser]
+    ./src/app/trends/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/trends/page.tsx [Client Component SSR]
+    ./src/app/trends/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+[00:01:44.088] Browser ERROR   ./src/app/trends/page.tsx:4:1
+Module not found: Can't resolve '../../../lib/services/keyword'
+  2 |
+  3 | import { useState, useEffect } from "react";
+> 4 | import { getKeywords, scrapeTrends, getTrendsData } from "../../../lib/services/keyword";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | import { Trend } from "../../../types/types";
+  6 |
+  7 | export default function TrendsPage() {
+
+Import traces:
+  Client Component Browser:
+    ./src/app/trends/page.tsx [Client Component Browser]
+    ./src/app/trends/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/trends/page.tsx [Client Component SSR]
+    ./src/app/trends/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+[00:01:44.088] Browser ERROR   ./src/app/trends/page.tsx:4:1
+Module not found: Can't resolve '../../../lib/services/keyword'
+  2 |
+  3 | import { useState, useEffect } from "react";
+> 4 | import { getKeywords, scrapeTrends, getTrendsData } from "../../../lib/services/keyword";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | import { Trend } from "../../../types/types";
+  6 |
+  7 | export default function TrendsPage() {
+
+Import traces:
+  Client Component Browser:
+    ./src/app/trends/page.tsx [Client Component Browser]
+    ./src/app/trends/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/trends/page.tsx [Client Component SSR]
+    ./src/app/trends/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+[00:01:47.549] Server  ERROR   ⨯ ./src/app/trends/page.tsx:4:1
+Module not found: Can't resolve '../../../lib/services/keyword'
+  2 |
+  3 | import { useState, useEffect } from "react";
+> 4 | import { getKeywords, scrapeTrends, getTrendsData } from "../../../lib/services/keyword";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | import { Trend } from "../../../types/types";
+  6 |
+  7 | export default function TrendsPage() {
+
+
+
+Import traces:
+  Client Component Browser:
+    ./src/app/trends/page.tsx [Client Component Browser]
+    ./src/app/trends/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/trends/page.tsx [Client Component SSR]
+    ./src/app/trends/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+[00:01:47.655] Server  LOG     ✓ Compiled in 0ms
+[00:01:47.757] Browser ERROR   ./src/app/trends/page.tsx:4:1
+Module not found: Can't resolve '../../../lib/services/keyword'
+  2 |
+  3 | import { useState, useEffect } from "react";
+> 4 | import { getKeywords, scrapeTrends, getTrendsData } from "../../../lib/services/keyword";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | import { Trend } from "../../../types/types";
+  6 |
+  7 | export default function TrendsPage() {
+
+Import traces:
+  Client Component Browser:
+    ./src/app/trends/page.tsx [Client Component Browser]
+    ./src/app/trends/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/trends/page.tsx [Client Component SSR]
+    ./src/app/trends/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+[00:01:47.757] Browser ERROR   ./src/app/trends/page.tsx:4:1
+Module not found: Can't resolve '../../../lib/services/keyword'
+  2 |
+  3 | import { useState, useEffect } from "react";
+> 4 | import { getKeywords, scrapeTrends, getTrendsData } from "../../../lib/services/keyword";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | import { Trend } from "../../../types/types";
+  6 |
+  7 | export default function TrendsPage() {
+
+Import traces:
+  Client Component Browser:
+    ./src/app/trends/page.tsx [Client Component Browser]
+    ./src/app/trends/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/trends/page.tsx [Client Component SSR]
+    ./src/app/trends/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+[00:01:47.805] Server  ERROR   ⨯ ./src/app/trends/page.tsx:4:1
+Module not found: Can't resolve '../../../lib/services/keyword'
+  2 |
+  3 | import { useState, useEffect } from "react";
+> 4 | import { getKeywords, scrapeTrends, getTrendsData } from "../../../lib/services/keyword";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | import { Trend } from "../../../types/types";
+  6 |
+  7 | export default function TrendsPage() {
+
+
+
+Import traces:
+  Client Component Browser:
+    ./src/app/trends/page.tsx [Client Component Browser]
+    ./src/app/trends/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/trends/page.tsx [Client Component SSR]
+    ./src/app/trends/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+[00:01:48.745] Browser ERROR   uncaughtError: Error: ./src/app/trends/page.tsx:4:1
+Module not found: Can't resolve '../../../lib/services/keyword'
+  2 |
+  3 | import { useState, useEffect } from "react";
+> 4 | import { getKeywords, scrapeTrends, getTrendsData } from "../../../lib/services/keyword";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | import { Trend } from "../../../types/types";
+  6 |
+  7 | export default function TrendsPage() {
+
+
+
+Import traces:
+  Client Component Browser:
+    ./src/app/trends/page.tsx [Client Component Browser]
+    ./src/app/trends/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/trends/page.tsx [Client Component SSR]
+    ./src/app/trends/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+
+
+[00:01:49.066] Browser ERROR   ./src/app/trends/page.tsx:4:1
+Module not found: Can't resolve '../../../lib/services/keyword'
+  2 |
+  3 | import { useState, useEffect } from "react";
+> 4 | import { getKeywords, scrapeTrends, getTrendsData } from "../../../lib/services/keyword";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | import { Trend } from "../../../types/types";
+  6 |
+  7 | export default function TrendsPage() {
+
+Import traces:
+  Client Component Browser:
+    ./src/app/trends/page.tsx [Client Component Browser]
+    ./src/app/trends/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/trends/page.tsx [Client Component SSR]
+    ./src/app/trends/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+[00:01:49.066] Browser ERROR   ./src/app/trends/page.tsx:4:1
+Module not found: Can't resolve '../../../lib/services/keyword'
+  2 |
+  3 | import { useState, useEffect } from "react";
+> 4 | import { getKeywords, scrapeTrends, getTrendsData } from "../../../lib/services/keyword";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | import { Trend } from "../../../types/types";
+  6 |
+  7 | export default function TrendsPage() {
+
+Import traces:
+  Client Component Browser:
+    ./src/app/trends/page.tsx [Client Component Browser]
+    ./src/app/trends/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/trends/page.tsx [Client Component SSR]
+    ./src/app/trends/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
+[00:02:49.037] Browser ERROR   ./src/app/trends/page.tsx:4:1
+Module not found: Can't resolve '../../../lib/services/keyword'
+  2 |
+  3 | import { useState, useEffect } from "react";
+> 4 | import { getKeywords, scrapeTrends, getTrendsData } from "../../../lib/services/keyword";
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  5 | import { Trend } from "../../../types/types";
+  6 |
+  7 | export default function TrendsPage() {
+
+Import traces:
+  Client Component Browser:
+    ./src/app/trends/page.tsx [Client Component Browser]
+    ./src/app/trends/page.tsx [Server Component]
+
+  Client Component SSR:
+    ./src/app/trends/page.tsx [Client Component SSR]
+    ./src/app/trends/page.tsx [Server Component]
+
+https://nextjs.org/docs/messages/module-not-found
