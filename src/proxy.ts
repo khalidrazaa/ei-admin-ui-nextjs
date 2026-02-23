@@ -3,15 +3,21 @@ import type { NextRequest } from "next/server";
 
 export function proxy(req: NextRequest) {
   const token = req.cookies.get("access_token")?.value;
+  const { pathname } = req.nextUrl;
 
-  // Protect admin routes
-  if (req.nextUrl.pathname.startsWith("/admin") && !token) {
+  // Redirect to login page if user is not logged in
+  if (!token && pathname !== "/login"){
     return NextResponse.redirect(new URL("/login", req.url));
+  }
+
+  // if logged in block login
+  if (token && pathname === "/login") {
+    return NextResponse.redirect(new URL("/dashboard", req.url));
   }
 
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ["/admin/:path*"], // applies only to /admin/*
+  matcher: ["/((?!_next|favicon.ico).*)"], // applies only to /admin/*
 };

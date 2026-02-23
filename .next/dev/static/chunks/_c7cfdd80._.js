@@ -18,7 +18,7 @@ class ApiError extends Error {
         this.info = info;
     }
 }
-const API_BASE = __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$build$2f$polyfills$2f$process$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"].env.NEXT_PUBLIC_API_BASE_URL || "";
+const API_BASE = ("TURBOPACK compile-time value", "http://app.explainit.tech/v1/api") || "";
 async function apiFetch(endpoint, options = {}) {
     const res = await fetch(`${API_BASE}${endpoint}`, {
         ...options,
@@ -78,7 +78,7 @@ async function verifyOtp(payload) {
     });
 }
 async function logout() {
-    const res = await fetch(`${__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$build$2f$polyfills$2f$process$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"].env.NEXT_PUBLIC_API_BASE_URL}/auth/logout`, {
+    const res = await fetch(`${("TURBOPACK compile-time value", "http://app.explainit.tech/v1/api")}/auth/logout`, {
         method: "POST",
         credentials: "include"
     });
@@ -123,18 +123,6 @@ function AdminLayout({ children }) {
         {
             name: "Trends Explorer",
             href: "/trends"
-        },
-        {
-            name: "Content Editor",
-            href: "/article-editor"
-        },
-        {
-            name: "Drafts",
-            href: "/draft"
-        },
-        {
-            name: "Published",
-            href: "/published"
         }
     ];
     const handleLogout = async ()=>{

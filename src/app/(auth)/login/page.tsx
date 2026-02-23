@@ -53,7 +53,7 @@ export default function LoginPage() {
     try {
       const res = await verifyOtp({ email, otp });
       localStorage.setItem("access_token", res.access_token);
-      router.push("/admin/dashboard");
+      router.push("/dashboard");
     } catch (err: unknown) {
       if (err instanceof Error) setError(err.message || "Invalid OTP");
       else setError("Invalid OTP");

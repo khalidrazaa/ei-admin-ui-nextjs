@@ -54,15 +54,20 @@ var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$serv
 ;
 function proxy(req) {
     const token = req.cookies.get("access_token")?.value;
-    // Protect admin routes
-    if (req.nextUrl.pathname.startsWith("/admin") && !token) {
+    const { pathname } = req.nextUrl;
+    // Redirect to login page if user is not logged in
+    if (!token && pathname !== "/login") {
         return __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$server$2e$js__$5b$middleware$5d$__$28$ecmascript$29$__["NextResponse"].redirect(new URL("/login", req.url));
+    }
+    // if logged in block login
+    if (token && pathname === "/login") {
+        return __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$server$2e$js__$5b$middleware$5d$__$28$ecmascript$29$__["NextResponse"].redirect(new URL("/dashboard", req.url));
     }
     return __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$server$2e$js__$5b$middleware$5d$__$28$ecmascript$29$__["NextResponse"].next();
 }
 const config = {
     matcher: [
-        "/admin/:path*"
+        "/((?!_next|favicon.ico).*)"
     ]
 };
 }),
