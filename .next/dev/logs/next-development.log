@@ -1,8 +1,2 @@
-[00:00:01.063] Server  LOG     ✓ Ready in 843ms
-[00:00:02.326] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
-[00:00:02.562] Browser ERROR   Error fetching trends data {"info":{"detail":"Not Found"},"status":404}
-[00:00:08.283] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
-[00:00:08.479] Browser ERROR   Error fetching trends data {"info":{"detail":"Not Found"},"status":404}
-[00:00:10.327] Browser ERROR   Error scraping trends {"info":{"detail":"Not Found"},"status":404}
-[00:00:21.278] Browser ERROR   Error fetching keywords {"info":{"detail":"Not Found"},"status":404}
-[00:00:22.364] Browser ERROR   Error fetching keywords {"info":{"detail":"Not Found"},"status":404}
+[00:00:01.260] Server  LOG     ✓ Ready in 973ms
+[00:00:05.912] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
