@@ -1,6 +1,0 @@
-{
-  "version": 3,
-  "sources": [],
-  "sections": [
-    {"offset": {"line": 46, "column": 0}, "map": {"version":3,"sources":["file:///D:/projects/ei-admin-ui-nextjs/src/proxy.ts"],"sourcesContent":["import { NextResponse } from \"next/server\";\r\nimport type { NextRequest } from \"next/server\";\r\n\r\nexport function proxy(req: NextRequest) {\r\n  const token = req.cookies.get(\"access_token\")?.value;\r\n  const { pathname } = req.nextUrl;\r\n\r\n  // Redirect to login page if user is not logged in\r\n  if (!token && pathname !== \"/login\"){\r\n    return NextResponse.redirect(new URL(\"/login\", req.url));\r\n  }\r\n\r\n  // if logged in block login\r\n  if (token && pathname === \"/login\") {\r\n    return NextResponse.redirect(new URL(\"/dashboard\", req.url));\r\n  }\r\n\r\n  return NextResponse.next();\r\n}\r\n\r\nexport const config = {\r\n  matcher: [\"/((?!_next|favicon.ico).*)\"], // applies only to /admin/*\r\n};"],"names":[],"mappings":";;;;;;AAAA;;AAGO,SAAS,MAAM,GAAgB;IACpC,MAAM,QAAQ,IAAI,OAAO,CAAC,GAAG,CAAC,iBAAiB;IAC/C,MAAM,EAAE,QAAQ,EAAE,GAAG,IAAI,OAAO;IAEhC,kDAAkD;IAClD,IAAI,CAAC,SAAS,aAAa,UAAS;QAClC,OAAO,8IAAY,CAAC,QAAQ,CAAC,IAAI,IAAI,UAAU,IAAI,GAAG;IACxD;IAEA,2BAA2B;IAC3B,IAAI,SAAS,aAAa,UAAU;QAClC,OAAO,8IAAY,CAAC,QAAQ,CAAC,IAAI,IAAI,cAAc,IAAI,GAAG;IAC5D;IAEA,OAAO,8IAAY,CAAC,IAAI;AAC1B;AAEO,MAAM,SAAS;IACpB,SAAS;QAAC;KAA6B;AACzC"}}]
-}
