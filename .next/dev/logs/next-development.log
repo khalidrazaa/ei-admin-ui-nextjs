@@ -1,4 +1,1 @@
-[00:00:01.878] Server  LOG     ✓ Ready in 1359ms
-[02:37:11.650] Browser INFO    %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
-[02:37:32.941] Browser ERROR   Error fetching trends data {"info":{"detail":"Not Found"},"status":404}
-[04:00:31.797] Server  LOG     ✓ Compiled in 144ms
+[00:00:01.864] Server  LOG     ✓ Ready in 1300ms
