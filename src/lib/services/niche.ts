@@ -47,3 +47,20 @@ export async function addKeyword(
     }
   );
 }
+
+export async function deleteNiche(nicheId: number) {
+  return apiFetch(`/admin/niches/${nicheId}`, {
+    method: "DELETE",
+  });
+}
+
+export async function createNiche(name: string) {
+  return apiFetch<Niche>("/admin/niches", {
+    method: "POST",
+    body: JSON.stringify({
+      name,
+      display_name: name,
+      keywords: [],
+    }),
+  });
+}
