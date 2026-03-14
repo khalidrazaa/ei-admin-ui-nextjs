@@ -23,6 +23,9 @@ export type VerifyOtpResponse = {
 export async function sendOtp(payload: SendOtpRequest): Promise<SendOtpResponse> {
   return apiFetch<SendOtpResponse>("/auth/send-otp", {
     method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },  
     body: JSON.stringify(payload),
   });
 }

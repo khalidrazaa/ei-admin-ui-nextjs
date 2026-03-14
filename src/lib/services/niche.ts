@@ -1,0 +1,49 @@
+import { apiFetch } from "@/lib/api";
+
+
+export interface Keyword {
+  id: number;
+  keyword: string;
+  is_active: boolean;
+}
+
+export interface Niche {
+  id: number;
+  name: string;
+  display_name: string;
+  region_code: string;
+  scan_mode: string;
+  is_active: boolean;
+  created_at: string;
+  last_scanned_at?: string | null;
+  keywords: Keyword[];
+}
+
+export async function getNiches(): Promise<Niche[]> {
+  const res = await apiFetch<Niche[]>("/admin/niches", {
+    method: "GET",
+  });
+
+  return res;
+}
+
+export async function deleteKeyword(
+  nicheId: number,
+  keywordId: number
+): Promise<void> {
+  await apiFetch(`/admin/niches/${nicheId}/keywords/${keywordId}`, {
+    method: "DELETE",
+  });
+}
+
+export async function addKeyword(
+  nicheId: number,
+  keyword: string
+): Promise<Keyword> {
+  return apiFetch<Keyword>(
+    `/admin/niches/${nicheId}/keywords?keyword=${encodeURIComponent(keyword)}`,
+    {
+      method: "POST",
+    }
+  );
+}

@@ -12,10 +12,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const navItems = [
     { name: "Dashboard", href: "/dashboard" },
-    { name: "Trends Explorer", href: "/trends" },
-  //  { name: "Content Editor", href: "/article-editor" },
-  //  { name: "Drafts", href: "/draft" },
-  //  { name: "Published", href: "/published" },
+    { name: "Niches", href: "/niches" },
+    { name: "Trends", href: "/trends" },
+    { name: "Articles", href: "/articles" }
   ];
 
   const handleLogout = async () => {
