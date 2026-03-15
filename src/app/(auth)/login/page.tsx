@@ -51,8 +51,7 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
     try {
-      const res = await verifyOtp({ email, otp });
-      localStorage.setItem("access_token", res.access_token);
+      await verifyOtp({ email, otp });
       router.push("/dashboard");
     } catch (err: unknown) {
       if (err instanceof Error) setError(err.message || "Invalid OTP");
