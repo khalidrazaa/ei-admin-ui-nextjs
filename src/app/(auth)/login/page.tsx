@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { sendOtp, verifyOtp } from "../../../lib/services/auth";
+import { sendOtp, verifyOtp } from "@/lib/services/auth";
 
 export default function LoginPage() {
   const router = useRouter();

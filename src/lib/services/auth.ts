@@ -1,4 +1,5 @@
-import { apiFetch } from '../api';
+
+import { apiFetch } from '@/lib/api';
 
 // ✅ Types for request/response
 export type SendOtpRequest = {
