@@ -133,6 +133,9 @@ export default function NichesPage() {
     <div>
       <h1 className="text-2xl font-semibold mb-6">Niches</h1>
       <div className="flex gap-2 mb-6">
+        <Button onClick={handleCreateNiche}>
+        + Niche
+      </Button>
       <input
         type="text"
         placeholder="New niche name"
@@ -140,15 +143,10 @@ export default function NichesPage() {
         onChange={(e) => setNewNiche(e.target.value)}
         className="border border-green-500 rounded px-2 py-0.5 text-sm min-w-[100px] focus:outline-none focus:ring-1 focus:ring-green-300"
       />
-    
-      <Button
-        onClick={handleCreateNiche}
-      >
-        + Niche
-      </Button>
     </div>
 
       <div className="space-y-4">
+        
         {niches.map((niche) => (
           <div
             key={niche.id}
@@ -157,6 +155,10 @@ export default function NichesPage() {
           <div className="flex justify-between items-start">
 
             <div className="flex flex-wrap items-center gap-2">
+              <Toggle
+                enabled={niche.is_active}
+                onChange={(value) => handleToggleNiche(niche.id, value)}
+              />
 
               <span className="font-semibold">
                 {niche.display_name} :
@@ -197,13 +199,7 @@ export default function NichesPage() {
                 className="border border-green-500 rounded px-2 py-0.5 text-sm min-w-[100px] focus:outline-none focus:ring-1 focus:ring-green-300"
               />
 
-            </div>
-
-              <Toggle
-                enabled={niche.is_active}
-                onChange={(value) => handleToggleNiche(niche.id, value)}
-              />
-              
+            </div>              
             <Button
               variant="danger"
               onClick={() => setDeleteTarget(niche)}

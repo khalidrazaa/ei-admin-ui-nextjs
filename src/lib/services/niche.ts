@@ -20,7 +20,7 @@ export interface Niche {
 }
 
 export async function getNiches(): Promise<Niche[]> {
-  const res = await apiFetch<Niche[]>("/admin/niches", {
+  const res = await apiFetch<Niche[]>("/admin/niches/", {
     method: "GET",
   });
 
@@ -67,7 +67,7 @@ export async function createNiche(name: string) {
 
 export async function updateNicheStatus(nicheId: number, is_active: boolean) {
   return apiFetch(`/admin/niches/${nicheId}`, {
-    method: "PUT",
+    method: "PATCH",
     body: JSON.stringify({
       is_active,
     }),
