@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { getNiches, Niche, deleteKeyword, addKeyword, deleteNiche, createNiche } from "@/lib/services/niche";
+import { getNiches, Niche, deleteKeyword, addKeyword, deleteNiche, createNiche, updateNicheStatus } from "@/lib/services/niche";
+import ConfirmModal from "@/components/ui/ConfirmModal";
+import Button from "@/components/ui/Button";
+import Toggle from "@/components/ui/Toggle";
 
 export default function NichesPage() {
   const [niches, setNiches] = useState<Niche[]>([]);
@@ -9,11 +12,12 @@ export default function NichesPage() {
   const [newKeywords, setNewKeywords] = useState<{ [nicheId: number]: string }>({});
   const inputRefs = useRef<{ [key: number]: HTMLInputElement | null }>({});
   const [newNiche, setNewNiche] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<Niche | null>(null);
 
   useEffect(() => {
     async function load() {
       try {
-        const data = await getNiches();
+        const data = await getNiches(); 
         setNiches(data);
       } catch (err) {
         console.error("Failed to load niches", err);
@@ -78,6 +82,20 @@ export default function NichesPage() {
     }
   }
 
+  async function handleToggleNiche(nicheId: number, active: boolean) {
+    try {
+      await updateNicheStatus(nicheId, active);
+
+      setNiches((prev) =>
+        prev.map((n) =>
+          n.id === nicheId ? { ...n, is_active: active } : n
+        )
+      );
+    } catch (err) {
+      console.error("Failed to update niche status", err);
+    }
+  }
+
   async function handleCreateNiche() {
     if (!newNiche.trim()) return;
 
@@ -91,13 +109,17 @@ export default function NichesPage() {
     }
   }
 
-  async function handleDeleteNiche(nicheId: number) {
-    if (!confirm("Delete this niche?")) return;
+  async function handleDeleteNicheConfirmed() {
+    if (!deleteTarget) return;
 
     try {
-      await deleteNiche(nicheId);
-      setNiches((prev) => prev.filter((n) => n.id !== nicheId));
+      await deleteNiche(deleteTarget.id);
 
+      setNiches((prev) =>
+        prev.filter((n) => n.id !== deleteTarget.id)
+      );
+
+      setDeleteTarget(null);
     } catch (err) {
       console.error("Failed to delete niche", err);
     }
@@ -119,67 +141,94 @@ export default function NichesPage() {
         className="border border-green-500 rounded px-2 py-0.5 text-sm min-w-[100px] focus:outline-none focus:ring-1 focus:ring-green-300"
       />
     
-      <button
+      <Button
         onClick={handleCreateNiche}
-        className="bg-gray-500 text-green-500 px-2 py-1 rounded text-sm hover:bg-green-700 hover:text-gray-300"
       >
         + Niche
-      </button>
+      </Button>
     </div>
 
       <div className="space-y-4">
         {niches.map((niche) => (
           <div
             key={niche.id}
-            className="border rounded-lg p-4 bg-white shadow-sm"
+            className="border border-gray-300 rounded-lg p-2 bg-white shadow-sm"
           >
-            <div className="flex justify-between items-center">
-              <div className="font-semibold">{niche.display_name}</div>
+          <div className="flex justify-between items-start">
 
-              <button
-                onClick={() => handleDeleteNiche(niche.id)}
-                className="bg-gray-500 text-red-300 px-2 py-1 rounded text-sm hover:bg-red-700 hover:text-gray-300"
-              >
-                Delete
-              </button>
-            </div>
+            <div className="flex flex-wrap items-center gap-2">
 
-            <div className="mt-2 flex flex-wrap item-center gap-2">
+              <span className="font-semibold">
+                {niche.display_name} :
+              </span>
+
               {niche.keywords.map((k) => (
-                  <span 
-                      key = {k.id}
-                      className = "flex items-center gap-2 bg-gray-200 text-gray-800 text-sm px-2 py-1 rounded"
+                <span
+                  key={k.id}
+                  className="flex items-center gap-2 bg-gray-200 text-gray-800 text-sm px-2 py-1 rounded"
+                >
+                  {k.keyword}
+                  <button
+                    onClick={() => handleDeleteKeyword(niche.id, k.id)}
+                    className="text-red-500 hover:text-red-800"
                   >
-                      {k.keyword}
-                      <button 
-                          onClick={() => handleDeleteKeyword(niche.id, k.id)}
-                          className="text-red-500 hover:text-red-800">X</button>
-                  </span> 
+                    X
+                  </button>
+                </span>
               ))}
-                <input
-                  ref={(el) => {inputRefs.current[niche.id] = el;}}
-                  type="text"
-                  placeholder="Add keyword"
-                  value={newKeywords[niche.id] || ""}
-                  onChange={(e) =>
-                      setNewKeywords((prev) => ({
-                          ...prev,
-                          [niche.id]: e.target.value,
-                      }))
+
+              <input
+                ref={(el) => { inputRefs.current[niche.id] = el; }}
+                type="text"
+                placeholder="Add keyword"
+                value={newKeywords[niche.id] || ""}
+                onChange={(e) =>
+                  setNewKeywords((prev) => ({
+                    ...prev,
+                    [niche.id]: e.target.value,
+                  }))
+                }
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    handleAddKeyword(niche.id);
                   }
-                  onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                          e.preventDefault();
-                          handleAddKeyword(niche.id);
-                      }
-                  }}
-                  className="border border-green-500 rounded px-2 py-0.5 text-sm min-w-[100px] focus:outline-none focus:ring-1 focus:ring-green-300"
-                />
+                }}
+                className="border border-green-500 rounded px-2 py-0.5 text-sm min-w-[100px] focus:outline-none focus:ring-1 focus:ring-green-300"
+              />
+
             </div>
+
+              <Toggle
+                enabled={niche.is_active}
+                onChange={(value) => handleToggleNiche(niche.id, value)}
+              />
+              
+            <Button
+              variant="danger"
+              onClick={() => setDeleteTarget(niche)}
+            >
+              Delete
+            </Button>
+              
+          </div>
+
+
 
           </div>
         ))}
       </div>
+      {deleteTarget && (
+        <ConfirmModal
+          open={true}
+          title="Delete Niche"
+          message={`Are you sure you want to delete "${deleteTarget.display_name}"?`}
+          confirmText="Delete"
+          cancelText="Cancel"
+          onConfirm={handleDeleteNicheConfirmed}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
     </div>
   );
 }

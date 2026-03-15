@@ -64,3 +64,12 @@ export async function createNiche(name: string) {
     }),
   });
 }
+
+export async function updateNicheStatus(nicheId: number, is_active: boolean) {
+  return apiFetch(`/admin/niches/${nicheId}`, {
+    method: "PUT",
+    body: JSON.stringify({
+      is_active,
+    }),
+  });
+}
