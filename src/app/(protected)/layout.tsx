@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
-import { logout } from "../../lib/services/auth"; // adjust path if needed
+import { logout } from "@/lib/services/auth"; // adjust path if needed
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();

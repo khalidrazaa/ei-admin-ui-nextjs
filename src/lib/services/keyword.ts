@@ -1,5 +1,5 @@
 import { apiFetch } from "@/lib/api";
-import {  KeywordResponse, ScrapeTrendsResponse, Trend } from "../../types/types";
+import {  KeywordResponse, ScrapeTrendsResponse, Trend } from "@/types/types";
 
 
 interface TrendsResponse {
