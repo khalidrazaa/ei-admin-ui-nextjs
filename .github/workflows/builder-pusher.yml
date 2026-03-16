@@ -20,6 +20,6 @@ jobs:
       - name: Build & Push
         run: |
           docker build \
-          --build-arg NEXT_PUBLIC_API_BASE_URL=https://app.explainit.tech \
+          --build-arg NEXT_PUBLIC_API_URL=/api \
           -t ghcr.io/${{ github.repository }}:latest .
           docker push ghcr.io/${{ github.repository }}:latest
