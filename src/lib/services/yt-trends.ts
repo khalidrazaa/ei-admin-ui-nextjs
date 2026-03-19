@@ -21,7 +21,7 @@ export async function getVideosByKeyword(
   if (params.days) query.append("days", String(params.days));
 
   return apiFetch(
-    `admin/keywords/${keyword_id}/videos?${query.toString()}`,
+    `/admin/youtube-scan/keywords/${keyword_id}/videos?${query.toString()}`,
     {
       method: "GET",
     }

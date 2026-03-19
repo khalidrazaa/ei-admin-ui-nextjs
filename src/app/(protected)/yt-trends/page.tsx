@@ -18,6 +18,7 @@ export default function TrendsPage() {
       min_views: minViews,
       days,
     });
+    console.log("Fetched videos:", data);
     setVideos(data);
   };
 
