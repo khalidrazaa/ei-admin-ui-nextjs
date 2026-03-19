@@ -12,8 +12,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const navItems = [
     { name: "Dashboard", href: "/dashboard" },
-    { name: "Niches", href: "/niches" },
-    { name: "Youtube Trends", href: "/yt-trends" },
+    { name: "YT Trends", href: "/niches" },
     { name: "Trends", href: "/trends" },
     { name: "Articles", href: "/articles" }
   ];
@@ -31,38 +30,46 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   };
 
   return (
-    <div className="flex min-h-screen">
-      {/* Sidebar */}
-      <aside className="w-64 bg-gray-900 text-white p-4 space-y-6 flex flex-col justify-between">
-        <div>
-          <h2 className="text-lg font-bold mb-4">Admin Panel</h2>
-          <nav className="space-y-2">
-            {navItems.map((item) => (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`block px-2 py-1 rounded ${
-                  pathname === item.href ? "bg-gray-700" : "hover:bg-gray-800"
-                }`}
-              >
-                {item.name}
-              </Link>
-            ))}
-          </nav>
-        </div>
+    <div className="flex flex-col min-h-screen">
 
-        {/* Logout button at bottom */}
+      {/* 🔷 TOP NAVBAR */}
+      <header className="h-14 bg-gray-900 text-white flex items-center justify-between px-6">
+        
+        {/* Left: Logo */}
+        <div className="font-bold text-lg">Admin Panel</div>
+
+        {/* Center: Nav */}
+        <nav className="flex gap-6">
+          {navItems.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={`px-2 py-1 rounded ${
+                pathname === item.href
+                  ? "bg-gray-700"
+                  : "hover:bg-gray-800"
+              }`}
+            >
+              {item.name}
+            </Link>
+          ))}
+        </nav>
+
+        {/* Right: Logout */}
         <button
           onClick={handleLogout}
           disabled={loading}
-          className="w-full rounded bg-red-500 px-4 py-2 text-white hover:bg-red-600 disabled:opacity-50"
+          className="rounded bg-red-500 px-3 py-1 text-sm hover:bg-red-600 disabled:opacity-50"
         >
-          {loading ? "Logging out..." : "Logout"}
+          {loading ? "..." : "Logout"}
         </button>
-      </aside>
+      </header>
 
-      {/* Main content */}
-      <main className="flex-1 p-6 bg-gray-50">{children}</main>
+      {/* 🔽 PAGE CONTENT */}
+      <main className="flex-1 bg-gray-50">
+        {children}
+      </main>
+
     </div>
   );
 }

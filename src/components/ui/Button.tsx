@@ -17,8 +17,8 @@ export default function Button({
     "px-2 py-1 rounded text-base font-medium transition-colors";
 
   const variants = {
-    primary: "bg-green-600 text-white hover:bg-green-700",
-    danger: "bg-red-600 text-white hover:bg-red-700",
+    primary: "bg-green-600 text-white hover:bg-white text-gray-600 hover:text-gray-800",
+    danger: "bg-red-600 text-white hover:bg-white-700",
     secondary: "bg-gray-500 text-white hover:bg-gray-600",
   };
 
