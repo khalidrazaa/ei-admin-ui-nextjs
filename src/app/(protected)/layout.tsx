@@ -13,6 +13,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const navItems = [
     { name: "Dashboard", href: "/dashboard" },
     { name: "Niches", href: "/niches" },
+    { name: "Youtube Trends", href: "/yt-trends" },
     { name: "Trends", href: "/trends" },
     { name: "Articles", href: "/articles" }
   ];

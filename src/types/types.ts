@@ -40,3 +40,26 @@ export interface Trend {
   last_updated?: string;
   explore_link?: string;
 }
+
+export type TrendVideo = {
+  id: number;
+
+  keyword_id: number;
+  youtube_video_id: string;
+
+  title: string;
+  channel_title: string;
+
+  view_count: number;
+  like_count: number | null;
+  comment_count: number | null;
+
+  published_at: string;   // ISO string from backend
+  scanned_at: string;
+
+  virality_score: number;
+
+  thumbnail_url: string;
+
+  youtube_url: string;    // computed from backend
+};

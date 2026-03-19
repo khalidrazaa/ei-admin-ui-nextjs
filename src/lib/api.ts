@@ -24,6 +24,9 @@ export async function apiFetch<T>(
     credentials: "include", // ✅ send cookies (important for auth)
   });
 
+    console.log("Fetching videos with endpoint:");
+    console.log(endpoint);
+
   let data: unknown;
   try {
     data = await res.json();
