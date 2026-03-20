@@ -5,6 +5,10 @@ import { getNiches, Niche, deleteKeyword, addKeyword, deleteNiche, createNiche, 
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import Button from "@/components/ui/Button";
 import Toggle from "@/components/ui/Toggle";
+import { TrendVideo } from "@/types/types";
+import { getVideosByNiche } from "@/lib/services/yt-trends";
+import VideoCard from "@/components/ui/VideoCard"; 
+
 
 export default function NichesPage() {
   const [niches, setNiches] = useState<Niche[]>([]);
@@ -17,6 +21,11 @@ export default function NichesPage() {
   const [expandedNiches, setExpandedNiches] = useState<{ [id: number]: boolean }>({});
   const [leftWidth, setLeftWidth] = useState(320);
   const isResizing = useRef(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [videos, setVideos] = useState<TrendVideo[]>([]);
+  const [loadingVideos, setLoadingVideos] = useState(false);
+  // filters (simple for now)
+  const [sort, setSort] = useState("score");
 
   useEffect(() => {
     async function load() {
@@ -46,6 +55,44 @@ export default function NichesPage() {
   const handleMouseUp = () => {
     isResizing.current = false;
   };
+
+  useEffect(() => {
+    if (!selectedNicheId) return;
+
+    async function loadVideos() {
+      try {
+        setLoadingVideos(true);
+        const data = await getVideosByNiche(selectedNicheId, {
+          sort,
+        });
+        setVideos(data);
+      } catch (err) {
+        console.error("Failed to load videos", err);
+      } finally {
+        setLoadingVideos(false);
+      }
+    }
+
+    loadVideos();
+  }, [selectedNicheId, sort]);
+
+  useEffect(() => {
+    if (!containerRef.current || niches.length === 0) return;
+  
+    const elements = containerRef.current.querySelectorAll(".niche-name");
+  
+    let maxWidth = 200; // tighter base
+  
+    elements.forEach((el) => {
+      const rect = (el as HTMLElement).getBoundingClientRect();
+      if (rect.width > maxWidth) maxWidth = rect.width;
+    });
+  
+    // smarter padding
+    const finalWidth = Math.min(maxWidth + 80, 450);
+  
+    setLeftWidth(finalWidth);
+  }, [niches]);
 
   useEffect(() => {
     window.addEventListener("mousemove", handleMouseMove);
@@ -160,13 +207,13 @@ export default function NichesPage() {
   if (loading) return <div>Loading niches...</div>;
 
   return (
-    <div className="flex h-full p-2">
+    <div className="flex h-[calc(100vh-56px)] overflow-hidden">
 
       {/* 🟦 LEFT PANEL */}
       <div
+        ref={containerRef}
         style={{ width: leftWidth }}
-        className=" pr-1 overflow-y-auto m-2 rounded-lg"
-      >
+        className="border-r pr-2 overflow-y-auto">
         <h1 className="text-xl font-semibold mb-4">Niches</h1>
 
         {/* Add Niche */}
@@ -181,7 +228,7 @@ export default function NichesPage() {
             placeholder="New niche name"
             value={newNiche}
             onChange={(e) => setNewNiche(e.target.value)}
-            className="border border-green-500 rounded px-2 py-0.5 text-sm"
+            className="w-full border border-green-500 rounded px-2 py-0.5 text-sm"
           />
         </div>
 
@@ -212,7 +259,7 @@ export default function NichesPage() {
                   </span>
                 
                   {/* Name */}
-                  <span className="font-medium">
+                  <span className="font-medium niche-name inline-block">
                     {niche.display_name}
                   </span>
                 </div>
@@ -257,11 +304,11 @@ export default function NichesPage() {
                 <div className="mt-3 pl-5 space-y-2">
                 
                   {/* Keywords */}
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-col gap-2">
                     {niche.keywords.map((k) => (
                       <span
                         key={k.id}
-                        className="flex items-center gap-1 bg-gray-200 text-xs px-2 py-0.5 rounded"
+                        className="flex items-center justify-between bg-gray-200 text-xs px-2 py-0.5 rounded"
                       >
                         {k.keyword}
                         <button
@@ -313,14 +360,44 @@ export default function NichesPage() {
       />
 
       {/* 🟩 RIGHT PANEL */}
-      <div className="flex-1 p-4">
-        {selectedNicheId ? (
-          <div>Load videos for niche: {selectedNicheId}</div>
-        ) : (
+      <div className="flex-1 p-4 overflow-y-auto">
+              
+        {!selectedNicheId && (
           <div className="text-gray-500">
             Select a niche to view videos
           </div>
         )}
+      
+        {selectedNicheId && (
+          <>
+            {/* 🔽 Controls */}
+            <div className="flex gap-3 mb-4">
+              <select
+                value={sort}
+                onChange={(e) => setSort(e.target.value)}
+                className="border px-2 py-1 rounded text-sm"
+              >
+                <option value="score">Score</option>
+                <option value="views">Views</option>
+                <option value="recent">Recent</option>
+              </select>
+            </div>
+        
+            {/* 🔽 Content */}
+            {loadingVideos ? (
+              <div>Loading videos...</div>
+            ) : videos.length === 0 ? (
+              <div className="text-gray-500">No videos found</div>
+            ) : (
+              <div className="flex flex-col gap-4">
+                {videos.map((video) => (
+                  <VideoCard key={video.id} video={video} />
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      
       </div>
 
       {/* Modal */}
