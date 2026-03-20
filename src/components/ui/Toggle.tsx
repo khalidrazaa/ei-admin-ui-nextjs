@@ -9,8 +9,8 @@ export default function Toggle({ enabled, onChange }: ToggleProps) {
   return (
     <button
       onClick={() => onChange(!enabled)}
-      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-        enabled ? "bg-green-600" : "bg-gray-400"
+      className={`relative inline-flex h-6 w-9 items-center rounded-full transition-colors ${
+        enabled ? "bg-green-800" : "bg-gray-400"
       }`}
     >
       <span
