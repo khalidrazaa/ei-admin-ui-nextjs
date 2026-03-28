@@ -1,36 +1,167 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { getNiches, Niche, deleteKeyword, addKeyword, deleteNiche, createNiche, updateNicheStatus } from "@/lib/services/niche";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import Button from "@/components/ui/Button";
-import Toggle from "@/components/ui/Toggle";
+import VideoCard from "@/components/ui/VideoCard";
+import {
+  addKeyword,
+  createNiche,
+  deleteKeyword,
+  deleteNiche,
+  getNiches,
+  Niche,
+  updateNicheStatus,
+} from "@/lib/services/niche";
+import {
+  getVideosByNiche,
+  VideoDays,
+  VideoSort,
+} from "@/lib/services/yt-trends";
 import { TrendVideo } from "@/types/types";
-import { getVideosByNiche } from "@/lib/services/yt-trends";
-import VideoCard from "@/components/ui/VideoCard"; 
 
+const SORT_OPTIONS: VideoSort[] = ["score", "views", "recent"];
+const DAY_OPTIONS: VideoDays[] = [7, 30];
+
+function parseSelectedNiche(value: string | null): number | null {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function parseSort(value: string | null): VideoSort {
+  return SORT_OPTIONS.includes(value as VideoSort)
+    ? (value as VideoSort)
+    : "score";
+}
+
+function parseDays(value: string | null): VideoDays | null {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return DAY_OPTIONS.includes(parsed as VideoDays)
+    ? (parsed as VideoDays)
+    : null;
+}
+
+function parseMinViews(value: string | null): string {
+  if (!value) {
+    return "";
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? String(parsed) : "";
+}
+
+function VideoCardSkeleton() {
+  return (
+    <div className="animate-pulse rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+      <div className="flex gap-4">
+        <div className="h-24 w-40 rounded-lg bg-gray-200" />
+        <div className="flex-1 space-y-3">
+          <div className="h-4 w-3/4 rounded bg-gray-200" />
+          <div className="h-3 w-1/3 rounded bg-gray-200" />
+          <div className="flex gap-2">
+            <div className="h-8 w-24 rounded-full bg-gray-200" />
+            <div className="h-8 w-20 rounded-full bg-gray-200" />
+          </div>
+          <div className="h-4 w-16 rounded bg-gray-200" />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function NichesPage() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [niches, setNiches] = useState<Niche[]>([]);
   const [loading, setLoading] = useState(true);
-  const [newKeywords, setNewKeywords] = useState<{ [nicheId: number]: string }>({});
+  const [newKeywords, setNewKeywords] = useState<{ [nicheId: number]: string }>(
+    {}
+  );
   const inputRefs = useRef<{ [key: number]: HTMLInputElement | null }>({});
   const [newNiche, setNewNiche] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<Niche | null>(null);
-  const [selectedNicheId, setSelectedNicheId] = useState<number | null>(null);
-  const [expandedNiches, setExpandedNiches] = useState<{ [id: number]: boolean }>({});
+  const [selectedNicheId, setSelectedNicheId] = useState<number | null>(
+    parseSelectedNiche(searchParams.get("niche"))
+  );
+  const [expandedNiches, setExpandedNiches] = useState<{ [id: number]: boolean }>(
+    {}
+  );
   const [leftWidth, setLeftWidth] = useState(320);
   const isResizing = useRef(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [videos, setVideos] = useState<TrendVideo[]>([]);
   const [loadingVideos, setLoadingVideos] = useState(false);
-  // filters (simple for now)
-  const [sort, setSort] = useState("score");
+  const [sort, setSort] = useState<VideoSort>(parseSort(searchParams.get("sort")));
+  const [minViews, setMinViews] = useState(parseMinViews(searchParams.get("min_views")));
+  const [days, setDays] = useState<VideoDays | "">(
+    parseDays(searchParams.get("days")) ?? ""
+  );
+
+  const videoFilters = useMemo(
+    () => ({
+      sort,
+      min_views: minViews ? Number(minViews) : undefined,
+      days: days === "" ? null : days,
+    }),
+    [days, minViews, sort]
+  );
+
+  function updateQueryParams(nextValues: {
+    niche?: number | null;
+    sort?: VideoSort;
+    min_views?: string;
+    days?: VideoDays | "";
+  }) {
+    const params = new URLSearchParams(searchParams.toString());
+
+    if (nextValues.niche !== undefined) {
+      if (nextValues.niche === null) {
+        params.delete("niche");
+      } else {
+        params.set("niche", String(nextValues.niche));
+      }
+    }
+
+    if (nextValues.sort !== undefined) {
+      params.set("sort", nextValues.sort);
+    }
+
+    if (nextValues.min_views !== undefined) {
+      if (nextValues.min_views) {
+        params.set("min_views", nextValues.min_views);
+      } else {
+        params.delete("min_views");
+      }
+    }
+
+    if (nextValues.days !== undefined) {
+      if (nextValues.days === "") {
+        params.delete("days");
+      } else {
+        params.set("days", String(nextValues.days));
+      }
+    }
+
+    const queryString = params.toString();
+    router.replace(queryString ? `${pathname}?${queryString}` : pathname, {
+      scroll: false,
+    });
+  }
 
   useEffect(() => {
     async function load() {
       try {
-        const data = await getNiches(); 
+        const data = await getNiches();
         setNiches(data);
       } catch (err) {
         console.error("Failed to load niches", err);
@@ -42,13 +173,22 @@ export default function NichesPage() {
     load();
   }, []);
 
- // 🔧 resize handlers
+  useEffect(() => {
+    setSelectedNicheId(parseSelectedNiche(searchParams.get("niche")));
+    setSort(parseSort(searchParams.get("sort")));
+    setMinViews(parseMinViews(searchParams.get("min_views")));
+    setDays(parseDays(searchParams.get("days")) ?? "");
+  }, [searchParams]);
+
   const handleMouseDown = () => {
     isResizing.current = true;
   };
 
   const handleMouseMove = (e: MouseEvent) => {
-    if (!isResizing.current) return;
+    if (!isResizing.current) {
+      return;
+    }
+
     setLeftWidth(Math.max(250, Math.min(600, e.clientX)));
   };
 
@@ -57,14 +197,17 @@ export default function NichesPage() {
   };
 
   useEffect(() => {
-    if (!selectedNicheId) return;
+    if (!selectedNicheId) {
+      setVideos([]);
+      return;
+    }
+
+    const nicheId = selectedNicheId;
 
     async function loadVideos() {
       try {
         setLoadingVideos(true);
-        const data = await getVideosByNiche(selectedNicheId, {
-          sort,
-        });
+        const data = await getVideosByNiche(nicheId, videoFilters);
         setVideos(data);
       } catch (err) {
         console.error("Failed to load videos", err);
@@ -74,24 +217,24 @@ export default function NichesPage() {
     }
 
     loadVideos();
-  }, [selectedNicheId, sort]);
+  }, [selectedNicheId, videoFilters]);
 
   useEffect(() => {
-    if (!containerRef.current || niches.length === 0) return;
-  
+    if (!containerRef.current || niches.length === 0) {
+      return;
+    }
+
     const elements = containerRef.current.querySelectorAll(".niche-name");
-  
-    let maxWidth = 200; // tighter base
-  
+    let maxWidth = 200;
+
     elements.forEach((el) => {
       const rect = (el as HTMLElement).getBoundingClientRect();
-      if (rect.width > maxWidth) maxWidth = rect.width;
+      if (rect.width > maxWidth) {
+        maxWidth = rect.width;
+      }
     });
-  
-    // smarter padding
-    const finalWidth = Math.min(maxWidth + 80, 450);
-  
-    setLeftWidth(finalWidth);
+
+    setLeftWidth(Math.min(maxWidth + 80, 450));
   }, [niches]);
 
   useEffect(() => {
@@ -132,16 +275,18 @@ export default function NichesPage() {
 
   async function handleAddKeyword(nicheId: number) {
     const raw = newKeywords[nicheId]?.trim();
-    if (!raw) return;
+    if (!raw) {
+      return;
+    }
 
     const keywords = raw
       .split(",")
-      .map((k) => k.trim())
-      .filter((k) => k.length > 0);
+      .map((keyword) => keyword.trim())
+      .filter((keyword) => keyword.length > 0);
 
     try {
       const createdKeywords = await Promise.all(
-        keywords.map((k) => addKeyword(nicheId, k))
+        keywords.map((keyword) => addKeyword(nicheId, keyword))
       );
 
       setNiches((prev) =>
@@ -167,9 +312,7 @@ export default function NichesPage() {
       await updateNicheStatus(nicheId, active);
 
       setNiches((prev) =>
-        prev.map((n) =>
-          n.id === nicheId ? { ...n, is_active: active } : n
-        )
+        prev.map((n) => (n.id === nicheId ? { ...n, is_active: active } : n))
       );
     } catch (err) {
       console.error("Failed to update niche status", err);
@@ -177,7 +320,9 @@ export default function NichesPage() {
   }
 
   async function handleCreateNiche() {
-    if (!newNiche.trim()) return;
+    if (!newNiche.trim()) {
+      return;
+    }
 
     try {
       const created = await createNiche(newNiche);
@@ -189,14 +334,21 @@ export default function NichesPage() {
   }
 
   async function handleDeleteNicheConfirmed() {
-    if (!deleteTarget) return;
+    if (!deleteTarget) {
+      return;
+    }
 
     try {
-      await deleteNiche(deleteTarget.id);
+      const deletedNicheId = deleteTarget.id;
+      await deleteNiche(deletedNicheId);
 
-      setNiches((prev) =>
-        prev.filter((n) => n.id !== deleteTarget.id)
-      );
+      setNiches((prev) => prev.filter((n) => n.id !== deletedNicheId));
+
+      if (selectedNicheId === deletedNicheId) {
+        setSelectedNicheId(null);
+        setVideos([]);
+        updateQueryParams({ niche: null });
+      }
 
       setDeleteTarget(null);
     } catch (err) {
@@ -204,130 +356,192 @@ export default function NichesPage() {
     }
   }
 
-  if (loading) return <div>Loading niches...</div>;
+  if (loading) {
+    return <div>Loading niches...</div>;
+  }
 
   return (
     <div className="flex h-[calc(100vh-56px)] overflow-hidden">
-
-      {/* 🟦 LEFT PANEL */}
       <div
         ref={containerRef}
         style={{ width: leftWidth }}
-        className="border-r pr-2 overflow-y-auto">
-        <h1 className="text-xl font-semibold mb-4">Niches</h1>
+        className="overflow-y-auto border-r pr-2"
+      >
+        <h1 className="mb-4 text-xl font-semibold">Niches</h1>
 
-        {/* Add Niche */}
-        <div className="flex gap-1 mb-4">
+        <div className="mb-4 flex gap-1">
           <Button onClick={handleCreateNiche}>
             <span className="flex items-center justify-center text-lg font-semibold">
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-plus-icon lucide-plus">
-              <path d="M5 12h14"/><path d="M12 5v14"/></svg></span>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="24"
+                height="24"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="lucide lucide-plus-icon lucide-plus"
+              >
+                <path d="M5 12h14" />
+                <path d="M12 5v14" />
+              </svg>
+            </span>
           </Button>
           <input
             type="text"
             placeholder="New niche name"
             value={newNiche}
             onChange={(e) => setNewNiche(e.target.value)}
-            className="w-full border border-green-500 rounded px-2 py-0.5 text-sm"
+            className="w-full rounded border border-green-500 px-2 py-0.5 text-sm"
           />
         </div>
 
-        <div className="space-y-3" >
+        <div className="space-y-3">
           {niches.map((niche) => (
             <div
               key={niche.id}
               className={`rounded-lg p-1 transition ${
                 selectedNicheId === niche.id
-                  ? "bg-green-50 border-green-400"
+                  ? "border-green-400 bg-green-50"
                   : "bg-white hover:bg-gray-50"
               }`}
-              >
-              {/* 🔷 HEADER */}
+            >
               <div className="flex items-center justify-between">
-              
                 <div
-                  className="flex items-center gap-2 cursor-pointer"
+                  className="flex cursor-pointer items-center gap-2"
                   onClick={() => {
                     setSelectedNicheId(niche.id);
+                    updateQueryParams({ niche: niche.id });
                     toggleExpand(niche.id);
                   }}
                 >
-                  {/* Expand icon */}
                   <span className="text-xs">
-                    {expandedNiches[niche.id] ? <svg xmlns="http://www.w3.org/2000/svg" width="15" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-down-icon lucide-chevron-down">
-                    <path d="m6 9 6 6 6-6"/></svg> : <svg xmlns="http://www.w3.org/2000/svg" width="15" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-chevron-right-icon lucide-chevron-right"><path d="m9 18 6-6-6-6"/></svg>}
+                    {expandedNiches[niche.id] ? (
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="15"
+                        height="24"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="lucide lucide-chevron-down-icon lucide-chevron-down"
+                      >
+                        <path d="m6 9 6 6 6-6" />
+                      </svg>
+                    ) : (
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="15"
+                        height="24"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="lucide lucide-chevron-right-icon lucide-chevron-right"
+                      >
+                        <path d="m9 18 6-6-6-6" />
+                      </svg>
+                    )}
                   </span>
-                
-                  {/* Name */}
-                  <span className="font-medium niche-name inline-block">
+
+                  <span className="niche-name inline-block font-medium">
                     {niche.display_name}
                   </span>
                 </div>
-                
-                {/* Actions */}
+
                 <div className="flex items-center gap-2">
-                
-                  {/* Small toggle */}
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       handleToggleNiche(niche.id, !niche.is_active);
                     }}
-                    className={`w-8 h-4 flex items-center rounded-full p-0.5 ${
+                    className={`flex h-4 w-8 items-center rounded-full p-0.5 ${
                       niche.is_active ? "bg-green-800" : "bg-gray-300"
                     }`}
                   >
                     <div
-                      className={`w-3 h-3 bg-white rounded-full transition ${
+                      className={`h-3 w-3 rounded-full bg-white transition ${
                         niche.is_active ? "translate-x-4" : ""
                       }`}
                     />
                   </button>
-                      
-                  {/* Delete icon */}
-                  <Button variant="danger"
+
+                  <Button
+                    variant="danger"
                     onClick={(e) => {
                       e.stopPropagation();
                       setDeleteTarget(niche);
                     }}
-                    //className="text-red-500 hover:text-white-700 text-sm"
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="15" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-trash2-icon lucide-trash-2"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
-                    <path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="15"
+                      height="24"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      className="lucide lucide-trash2-icon lucide-trash-2"
+                    >
+                      <path d="M10 11v6" />
+                      <path d="M14 11v6" />
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                      <path d="M3 6h18" />
+                      <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                    </svg>
                   </Button>
-                  
                 </div>
               </div>
-                  
-              {/* 🔽 EXPANDED CONTENT */}
+
               {expandedNiches[niche.id] && (
-                <div className="mt-3 pl-5 space-y-2">
-                
-                  {/* Keywords */}
+                <div className="mt-3 space-y-2 pl-5">
                   <div className="flex flex-col gap-2">
-                    {niche.keywords.map((k) => (
+                    {niche.keywords.map((keyword) => (
                       <span
-                        key={k.id}
-                        className="flex items-center justify-between bg-gray-200 text-xs px-2 py-0.5 rounded"
+                        key={keyword.id}
+                        className="flex items-center justify-between rounded bg-gray-200 px-2 py-0.5 text-xs"
                       >
-                        {k.keyword}
+                        {keyword.keyword}
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleDeleteKeyword(niche.id, k.id);
+                            handleDeleteKeyword(niche.id, keyword.id);
                           }}
                           className="text-gray-500 hover:text-red-700"
                         >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-x-icon lucide-x"><path d="M18 6 6 18"/>
-                        <path d="m6 6 12 12"/></svg>
+                          <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            width="15"
+                            height="24"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            className="lucide lucide-x-icon lucide-x"
+                          >
+                            <path d="M18 6 6 18" />
+                            <path d="m6 6 12 12" />
+                          </svg>
                         </button>
                       </span>
                     ))}
                   </div>
-                  
-                  {/* Add keyword */}
+
                   <input
-                    ref={(el) => { inputRefs.current[niche.id] = el; }}
+                    ref={(el) => {
+                      inputRefs.current[niche.id] = el;
+                    }}
                     type="text"
                     placeholder="Add keyword (comma separated)"
                     value={newKeywords[niche.id] || ""}
@@ -344,7 +558,7 @@ export default function NichesPage() {
                         handleAddKeyword(niche.id);
                       }
                     }}
-                    className="w-full border rounded px-2 py-1 text-xs"
+                    className="w-full rounded border px-2 py-1 text-xs"
                   />
                 </div>
               )}
@@ -353,39 +567,70 @@ export default function NichesPage() {
         </div>
       </div>
 
-      {/* 🟨 RESIZER */}
       <div
         onMouseDown={handleMouseDown}
         className="w-1 cursor-col-resize bg-gray-300 hover:bg-gray-400"
       />
 
-      {/* 🟩 RIGHT PANEL */}
-      <div className="flex-1 p-4 overflow-y-auto">
-              
+      <div className="flex-1 overflow-y-auto p-4">
         {!selectedNicheId && (
-          <div className="text-gray-500">
-            Select a niche to view videos
-          </div>
+          <div className="text-gray-500">Select a niche to view videos</div>
         )}
-      
+
         {selectedNicheId && (
           <>
-            {/* 🔽 Controls */}
-            <div className="flex gap-3 mb-4">
+            <div className="mb-4 flex flex-wrap gap-3">
               <select
                 value={sort}
-                onChange={(e) => setSort(e.target.value)}
-                className="border px-2 py-1 rounded text-sm"
+                onChange={(e) => {
+                  const nextSort = e.target.value as VideoSort;
+                  setSort(nextSort);
+                  updateQueryParams({ sort: nextSort });
+                }}
+                className="rounded border px-2 py-1 text-sm"
               >
                 <option value="score">Score</option>
                 <option value="views">Views</option>
                 <option value="recent">Recent</option>
               </select>
+
+              <input
+                type="number"
+                min="0"
+                inputMode="numeric"
+                placeholder="Min views"
+                value={minViews}
+                onChange={(e) => {
+                  const nextValue = e.target.value;
+                  setMinViews(nextValue);
+                  updateQueryParams({ min_views: nextValue });
+                }}
+                className="w-32 rounded border px-2 py-1 text-sm"
+              />
+
+              <select
+                value={days}
+                onChange={(e) => {
+                  const nextDays = e.target.value
+                    ? (Number(e.target.value) as VideoDays)
+                    : "";
+                  setDays(nextDays);
+                  updateQueryParams({ days: nextDays });
+                }}
+                className="rounded border px-2 py-1 text-sm"
+              >
+                <option value="">All time</option>
+                <option value="7">Last 7 days</option>
+                <option value="30">Last 30 days</option>
+              </select>
             </div>
-        
-            {/* 🔽 Content */}
+
             {loadingVideos ? (
-              <div>Loading videos...</div>
+              <div className="flex flex-col gap-4">
+                {Array.from({ length: 4 }).map((_, index) => (
+                  <VideoCardSkeleton key={index} />
+                ))}
+              </div>
             ) : videos.length === 0 ? (
               <div className="text-gray-500">No videos found</div>
             ) : (
@@ -397,10 +642,8 @@ export default function NichesPage() {
             )}
           </>
         )}
-      
       </div>
 
-      {/* Modal */}
       {deleteTarget && (
         <ConfirmModal
           open={true}
