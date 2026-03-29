@@ -12,13 +12,14 @@ import {
   deleteNiche,
   getNiches,
   Niche,
+  scanNicheYouTube,
   updateNicheStatus,
 } from "@/lib/services/niche";
 import {
   getVideosByNiche,
   VideoDays,
   VideoSort,
-} from "@/lib/services/yt-trends";
+} from "@/lib/services/scaned-trends";
 import { TrendVideo } from "@/types/types";
 
 const SORT_OPTIONS: VideoSort[] = ["score", "views", "recent"];
@@ -101,6 +102,11 @@ export default function NichesPage() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [videos, setVideos] = useState<TrendVideo[]>([]);
   const [loadingVideos, setLoadingVideos] = useState(false);
+  const [scanningNiche, setScanningNiche] = useState(false);
+  const [scanMessage, setScanMessage] = useState<string | null>(null);
+  const [scanMessageType, setScanMessageType] = useState<"success" | "error" | null>(
+    null
+  );
   const [sort, setSort] = useState<VideoSort>(parseSort(searchParams.get("sort")));
   const [minViews, setMinViews] = useState(parseMinViews(searchParams.get("min_views")));
   const [days, setDays] = useState<VideoDays | "">(
@@ -202,12 +208,10 @@ export default function NichesPage() {
       return;
     }
 
-    const nicheId = selectedNicheId;
-
     async function loadVideos() {
       try {
         setLoadingVideos(true);
-        const data = await getVideosByNiche(nicheId, videoFilters);
+        const data = await getVideosByNiche(selectedNicheId, videoFilters);
         setVideos(data);
       } catch (err) {
         console.error("Failed to load videos", err);
@@ -218,6 +222,11 @@ export default function NichesPage() {
 
     loadVideos();
   }, [selectedNicheId, videoFilters]);
+
+  useEffect(() => {
+    setScanMessage(null);
+    setScanMessageType(null);
+  }, [selectedNicheId]);
 
   useEffect(() => {
     if (!containerRef.current || niches.length === 0) {
@@ -353,6 +362,47 @@ export default function NichesPage() {
       setDeleteTarget(null);
     } catch (err) {
       console.error("Failed to delete niche", err);
+    }
+  }
+
+  async function handleManualScan() {
+    if (!selectedNicheId) {
+      return;
+    }
+
+    const selectedNiche = niches.find((niche) => niche.id === selectedNicheId);
+    const selectedNicheName = selectedNiche?.display_name ?? "selected niche";
+
+    try {
+      setScanningNiche(true);
+      setScanMessage(`Scanning YouTube for ${selectedNicheName}...`);
+      setScanMessageType(null);
+
+      const response = await scanNicheYouTube(selectedNicheId);
+      const result = response.result;
+
+      setScanMessage(
+        `Scanned ${result.processed_rows} items and added ${result.inserted_count} videos. Repeated ${result.matched_count}, updated ${result.modified_count}, categorized ${result.categorized_count}.`
+      );
+      setScanMessageType("success");
+      setLoadingVideos(true);
+
+      try {
+        const refreshedVideos = await getVideosByNiche(selectedNicheId, videoFilters);
+        setVideos(refreshedVideos);
+      } catch (refreshErr) {
+        console.error("Failed to refresh videos after scan", refreshErr);
+      } finally {
+        setLoadingVideos(false);
+      }
+    } catch (err) {
+      console.error("Failed to scan niche YouTube videos", err);
+      setScanMessage(
+        err instanceof Error ? err.message : "Failed to scan niche YouTube videos"
+      );
+      setScanMessageType("error");
+    } finally {
+      setScanningNiche(false);
     }
   }
 
@@ -579,50 +629,76 @@ export default function NichesPage() {
 
         {selectedNicheId && (
           <>
-            <div className="mb-4 flex flex-wrap gap-3">
-              <select
-                value={sort}
-                onChange={(e) => {
-                  const nextSort = e.target.value as VideoSort;
-                  setSort(nextSort);
-                  updateQueryParams({ sort: nextSort });
-                }}
-                className="rounded border px-2 py-1 text-sm"
-              >
-                <option value="score">Score</option>
-                <option value="views">Views</option>
-                <option value="recent">Recent</option>
-              </select>
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+              <div className="flex flex-wrap gap-3">
+                <select
+                  value={sort}
+                  onChange={(e) => {
+                    const nextSort = e.target.value as VideoSort;
+                    setSort(nextSort);
+                    updateQueryParams({ sort: nextSort });
+                  }}
+                  className="rounded border px-2 py-1 text-sm"
+                >
+                  <option value="score">Score</option>
+                  <option value="views">Views</option>
+                  <option value="recent">Recent</option>
+                </select>
 
-              <input
-                type="number"
-                min="0"
-                inputMode="numeric"
-                placeholder="Min views"
-                value={minViews}
-                onChange={(e) => {
-                  const nextValue = e.target.value;
-                  setMinViews(nextValue);
-                  updateQueryParams({ min_views: nextValue });
-                }}
-                className="w-32 rounded border px-2 py-1 text-sm"
-              />
+                <input
+                  type="number"
+                  min="0"
+                  inputMode="numeric"
+                  placeholder="Min views"
+                  value={minViews}
+                  onChange={(e) => {
+                    const nextValue = e.target.value;
+                    setMinViews(nextValue);
+                    updateQueryParams({ min_views: nextValue });
+                  }}
+                  className="w-32 rounded border px-2 py-1 text-sm"
+                />
 
-              <select
-                value={days}
-                onChange={(e) => {
-                  const nextDays = e.target.value
-                    ? (Number(e.target.value) as VideoDays)
-                    : "";
-                  setDays(nextDays);
-                  updateQueryParams({ days: nextDays });
-                }}
-                className="rounded border px-2 py-1 text-sm"
-              >
-                <option value="">All time</option>
-                <option value="7">Last 7 days</option>
-                <option value="30">Last 30 days</option>
-              </select>
+                <select
+                  value={days}
+                  onChange={(e) => {
+                    const nextDays = e.target.value
+                      ? (Number(e.target.value) as VideoDays)
+                      : "";
+                    setDays(nextDays);
+                    updateQueryParams({ days: nextDays });
+                  }}
+                  className="rounded border px-2 py-1 text-sm"
+                >
+                  <option value="">All time</option>
+                  <option value="7">Last 7 days</option>
+                  <option value="30">Last 30 days</option>
+                </select>
+              </div>
+
+              <div className="flex max-w-md flex-col items-end gap-2">
+                <button
+                  onClick={handleManualScan}
+                  disabled={scanningNiche}
+                  className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {scanningNiche ? "Scanning YouTube..." : "Scan Now"}
+                </button>
+
+                {scanMessage && (
+                  <p
+                    className={`text-right text-sm ${
+                      scanMessageType === "error"
+                        ? "text-red-600"
+                        : scanMessageType === "success"
+                          ? "text-green-700"
+                          : "text-gray-600"
+                    }`}
+                  >
+                    {scanMessage}
+                  </p>
+                )}
+              </div>
             </div>
 
             {loadingVideos ? (
