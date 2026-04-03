@@ -208,10 +208,11 @@ export default function NichesPage() {
       return;
     }
 
+    const nicheId = selectedNicheId;
     async function loadVideos() {
       try {
         setLoadingVideos(true);
-        const data = await getVideosByNiche(selectedNicheId, videoFilters);
+        const data = await getVideosByNiche(nicheId, videoFilters);
         setVideos(data);
       } catch (err) {
         console.error("Failed to load videos", err);
@@ -379,10 +380,12 @@ export default function NichesPage() {
       setScanMessageType(null);
 
       const response = await scanNicheYouTube(selectedNicheId);
-      const result = response.result;
+      //const result = response
+      console.log("Scan result:", response);
+      
 
       setScanMessage(
-        `Scanned ${result.processed_rows} items and added ${result.inserted_count} videos. Repeated ${result.matched_count}, updated ${result.modified_count}, categorized ${result.categorized_count}.`
+        `Scan result ${response.videos_saved} videos saved.`
       );
       setScanMessageType("success");
       setLoadingVideos(true);
@@ -676,17 +679,10 @@ export default function NichesPage() {
                 </select>
               </div>
 
-              <div className="flex max-w-md flex-col items-end gap-2">
-                <button
-                  onClick={handleManualScan}
-                  disabled={scanningNiche}
-                  className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {scanningNiche ? "Scanning YouTube..." : "Scan Now"}
-                </button>
+              <div className="flex max-w-md justify-end gap-3">
 
                 {scanMessage && (
-                  <p
+                  <span
                     className={`text-right text-sm ${
                       scanMessageType === "error"
                         ? "text-red-600"
@@ -696,8 +692,18 @@ export default function NichesPage() {
                     }`}
                   >
                     {scanMessage}
-                  </p>
+                  </span>
                 )}
+
+                <button
+                  onClick={handleManualScan}
+                  disabled={scanningNiche}
+                  className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {scanningNiche ? "Scanning" : "Scan Now"}
+                </button>
+
+
               </div>
             </div>
 

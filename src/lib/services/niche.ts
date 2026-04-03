@@ -77,8 +77,8 @@ export async function updateNicheStatus(nicheId: number, is_active: boolean) {
 
 export async function scanNicheYouTube(
   nicheId: number
-): Promise<ScrapeTrendsResponse> {
-  return apiFetch<ScrapeTrendsResponse>(
+): Promise<ScrapeYTResponse> {
+  return apiFetch<ScrapeYTResponse>(
     `/admin/youtube-scan/niches/${nicheId}/scan-youtube`,
     {
       method: "GET",

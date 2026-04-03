@@ -27,6 +27,11 @@ export interface ScrapeTrendsResponse  {
   };
 };
 
+export interface ScrapeYTResponse {
+  niche_id: number;
+  videos_saved: number;
+}
+
 export interface Trend {
   _id: string;
   trend: string;
