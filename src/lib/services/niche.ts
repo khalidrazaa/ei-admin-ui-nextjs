@@ -1,5 +1,5 @@
 import { apiFetch } from "@/lib/api";
-import { ScrapeTrendsResponse } from "@/types/types";
+import { ScrapeTrendsResponse, ScrapeYTResponse } from "@/types/types";
 
 
 export interface Keyword {

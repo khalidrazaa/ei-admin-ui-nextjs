@@ -1,11 +1,11 @@
-import { TrendVideo } from "@/types/types";
+import { PopularVideo, TrendVideo } from "@/types/types";
 import {
   formatCompactNumber,
   formatRelativeTime,
 } from "@/lib/utils/formatters";
 
 type Props = {
-  video: TrendVideo;
+  video: TrendVideo | PopularVideo;
 };
 
 export default function VideoCard({ video }: Props) {
