@@ -1,4 +1,5 @@
 import { apiFetch } from "@/lib/api";
+import { ScrapeTrendsResponse, ScrapeYTResponse } from "@/types/types";
 
 
 export interface Keyword {
@@ -72,4 +73,15 @@ export async function updateNicheStatus(nicheId: number, is_active: boolean) {
       is_active,
     }),
   });
+}
+
+export async function scanNicheYouTube(
+  nicheId: number
+): Promise<ScrapeYTResponse> {
+  return apiFetch<ScrapeYTResponse>(
+    `/admin/youtube-scan/niches/${nicheId}/scan-youtube`,
+    {
+      method: "GET",
+    }
+  );
 }

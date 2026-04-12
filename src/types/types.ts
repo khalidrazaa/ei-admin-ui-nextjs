@@ -27,6 +27,11 @@ export interface ScrapeTrendsResponse  {
   };
 };
 
+export interface ScrapeYTResponse {
+  niche_id: number;
+  videos_saved: number;
+}
+
 export interface Trend {
   _id: string;
   trend: string;
@@ -40,3 +45,50 @@ export interface Trend {
   last_updated?: string;
   explore_link?: string;
 }
+
+export type TrendVideo = {
+  id: number;
+
+  keyword_id: number;
+  youtube_video_id: string;
+
+  title: string;
+  channel_title: string;
+
+  view_count: number;
+  like_count: number | null;
+  comment_count: number | null;
+
+  published_at: string;   // ISO string from backend
+  scanned_at: string;
+
+  virality_score: number;
+
+  thumbnail_url: string;
+
+  youtube_url: string;    // computed from backend
+};
+
+export type PopularVideo = {
+  id: number;
+  keyword_id: number | null;
+  youtube_video_id: string;
+
+  title: string;
+  channel_title: string;
+
+  view_count: number;
+  like_count: number | null;
+  comment_count: number | null;
+
+  published_at: string;
+  scanned_at: string;
+
+  virality_score: number;
+
+  thumbnail_url: string;
+  source: string;
+  region_code: string | null;
+
+  youtube_url: string;
+};
