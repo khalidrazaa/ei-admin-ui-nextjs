@@ -695,13 +695,13 @@ export default function NichesPage() {
                   </span>
                 )}
 
-                <button
+                <Button
                   onClick={handleManualScan}
                   disabled={scanningNiche}
-                  className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  //className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {scanningNiche ? "Scanning" : "Scan Now"}
-                </button>
+                </Button>
 
 
               </div>

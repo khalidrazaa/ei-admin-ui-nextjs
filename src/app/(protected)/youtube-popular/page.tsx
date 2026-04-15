@@ -24,18 +24,6 @@ const REGION_OPTIONS = [
 
 const ALL_CATEGORIES = "all";
 
-function formatSourceLabel(source: string) {
-  if (!source) {
-    return "Uncategorized";
-  }
-
-  return source
-    .split(/[_-]/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
-
 function VideoCardSkeleton() {
   return (
     <div className="animate-pulse rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
@@ -65,6 +53,7 @@ export default function YoutubePopularPage() {
   const [minViews, setMinViews] = useState("");
   const [days, setDays] = useState<VideoDays | "">("");
   const [regionCode, setRegionCode] = useState("");
+  const [niche, setNiche] = useState("");
   const [selectedCategory, setSelectedCategory] = useState(ALL_CATEGORIES);
 
   const filters = useMemo(
@@ -73,15 +62,16 @@ export default function YoutubePopularPage() {
       min_views: minViews ? Number(minViews) : undefined,
       days: days === "" ? null : days,
       region_code: regionCode || undefined,
+      niche: niche || undefined,
     }),
-    [days, minViews, regionCode, sort]
+    [days, minViews, regionCode, sort, niche]
   );
 
   const categories = useMemo(() => {
     const counts = new Map<string, number>();
 
     videos.forEach((video) => {
-      const key = video.source || "uncategorized";
+      const key = video.category_title || "uncategorized";
       counts.set(key, (counts.get(key) ?? 0) + 1);
     });
 
@@ -92,10 +82,10 @@ export default function YoutubePopularPage() {
         count: videos.length,
       },
       ...Array.from(counts.entries())
-        .sort((a, b) => a[0].localeCompare(b[0]))
+        .sort((a, b) => b[1] - a[1])
         .map(([key, count]) => ({
           key,
-          label: formatSourceLabel(key),
+          label: key,
           count,
         })),
     ];
@@ -106,7 +96,7 @@ export default function YoutubePopularPage() {
       return videos;
     }
 
-    return videos.filter((video) => (video.source || "uncategorized") === selectedCategory);
+    return videos.filter((video) => (video.category_title || "uncategorized") === selectedCategory);
   }, [selectedCategory, videos]);
 
   useEffect(() => {
@@ -133,7 +123,7 @@ export default function YoutubePopularPage() {
     }
 
     const exists = videos.some(
-      (video) => (video.source || "uncategorized") === selectedCategory
+      (video) => (video.category_title || "uncategorized") === selectedCategory
     );
 
     if (!exists) {
@@ -167,15 +157,10 @@ export default function YoutubePopularPage() {
       <aside className="w-72 shrink-0 border-r border-gray-200 bg-white p-4">
         <div className="mb-6">
           <h1 className="text-xl font-semibold text-gray-900">Youtube Popular</h1>
-          <p className="mt-1 text-sm text-gray-500">
-            Browse stored popular YouTube videos by category and country.
-          </p>
         </div>
 
         <div className="mb-4">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
-            Categories
-          </p>
+
           <div className="space-y-2">
             {categories.map((category) => {
               const isActive = selectedCategory === category.key;
@@ -206,93 +191,98 @@ export default function YoutubePopularPage() {
       </aside>
 
       <section className="flex-1 overflow-y-auto p-4">
-        <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">
-              {selectedCategory === ALL_CATEGORIES
-                ? "All Popular Videos"
-                : formatSourceLabel(selectedCategory)}
-            </h2>
-            <p className="text-sm text-gray-500">
-              {visibleVideos.length} video{visibleVideos.length === 1 ? "" : "s"} shown
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3">
-            {message && (
-              <span
-                className={`text-sm ${
-                  messageType === "error"
-                    ? "text-red-600"
-                    : messageType === "success"
-                      ? "text-green-700"
-                      : "text-gray-600"
-                }`}
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          {/* LEFT: Title + count */}
+          <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+            {selectedCategory === ALL_CATEGORIES
+              ? "All Popular Videos"
+              : `${selectedCategory}`}
+            <span className="text-sm font-normal text-gray-500">
+              ({visibleVideos.length} video{visibleVideos.length === 1 ? "" : "s"})
+            </span>
+          </h2>
+            
+          {/* RIGHT: Filters + actions */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Filters */}
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={regionCode}
+                onChange={(e) => setRegionCode(e.target.value)}
+                className="rounded border px-2 py-1 text-sm"
               >
-                {message}
-              </span>
-            )}
-
-            <Button onClick={handleScanNow} disabled={scanning}>
-              {scanning ? "Scanning..." : "Scan Now"}
-            </Button>
+                {REGION_OPTIONS.map((option) => (
+                  <option key={option.label} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              
+              <select
+                value={sort}
+                onChange={(e) => setSort(e.target.value as VideoSort)}
+                className="rounded border px-2 py-1 text-sm"
+              >
+                {SORT_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    {option === "score"
+                      ? "Score"
+                      : option === "views"
+                        ? "Views"
+                        : "Recent"}
+                  </option>
+                ))}
+              </select>
+              
+              <input
+                type="number"
+                min="0"
+                placeholder="Min views"
+                value={minViews}
+                onChange={(e) => setMinViews(e.target.value)}
+                className="w-28 rounded border px-2 py-1 text-sm"
+              />
+          
+              <select
+                value={days}
+                onChange={(e) =>
+                  setDays(e.target.value ? (Number(e.target.value) as VideoDays) : "")
+                }
+                className="rounded border px-2 py-1 text-sm"
+              >
+                <option value="">All time</option>
+                {DAY_OPTIONS.map((option) => (
+                  <option key={option} value={option}>
+                    Last {option} days
+                  </option>
+                ))}
+              </select>
+            </div>
+              
+            {/* RIGHT SIDE (gap added here 👇) */}
+            <div className="flex items-center gap-3 ml-4">
+              {message && (
+                <span
+                  className={`text-sm ${
+                    messageType === "error"
+                      ? "text-red-600"
+                      : messageType === "success"
+                        ? "text-green-700"
+                        : "text-gray-600"
+                  }`}
+                >
+                  {message}
+                </span>
+              )}
+          
+              <Button onClick={handleScanNow} disabled={scanning}>
+                {scanning ? "Scanning" : "Scan Now"}
+              </Button>
+            </div>
           </div>
         </div>
 
-        <div className="mb-4 flex flex-wrap gap-3 rounded-xl border border-gray-200 bg-white p-3">
-          <select
-            value={regionCode}
-            onChange={(e) => setRegionCode(e.target.value)}
-            className="rounded border px-2 py-1 text-sm"
-          >
-            {REGION_OPTIONS.map((option) => (
-              <option key={option.label} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
 
-          <select
-            value={sort}
-            onChange={(e) => setSort(e.target.value as VideoSort)}
-            className="rounded border px-2 py-1 text-sm"
-          >
-            {SORT_OPTIONS.map((option) => (
-              <option key={option} value={option}>
-                {option === "score"
-                  ? "Score"
-                  : option === "views"
-                    ? "Views"
-                    : "Recent"}
-              </option>
-            ))}
-          </select>
-
-          <input
-            type="number"
-            min="0"
-            inputMode="numeric"
-            placeholder="Min views"
-            value={minViews}
-            onChange={(e) => setMinViews(e.target.value)}
-            className="w-32 rounded border px-2 py-1 text-sm"
-          />
-
-          <select
-            value={days}
-            onChange={(e) =>
-              setDays(e.target.value ? (Number(e.target.value) as VideoDays) : "")
-            }
-            className="rounded border px-2 py-1 text-sm"
-          >
-            <option value="">All time</option>
-            {DAY_OPTIONS.map((option) => (
-              <option key={option} value={option}>
-                Last {option} days
-              </option>
-            ))}
-          </select>
-        </div>
 
         {loading ? (
           <div className="flex flex-col gap-4">
@@ -307,17 +297,7 @@ export default function YoutubePopularPage() {
         ) : (
           <div className="flex flex-col gap-4">
             {visibleVideos.map((video) => (
-              <div key={video.id}>
-                <div className="mb-2 flex flex-wrap gap-2 text-xs text-gray-600">
-                  <span className="rounded-full bg-blue-50 px-2.5 py-1 text-blue-700">
-                    Category {formatSourceLabel(video.source)}
-                  </span>
-                  {video.region_code && (
-                    <span className="rounded-full bg-amber-50 px-2.5 py-1 text-amber-700">
-                      Region {video.region_code}
-                    </span>
-                  )}
-                </div>
+              <div key={video.id}>  
                 <VideoCard video={video} />
               </div>
             ))}

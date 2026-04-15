@@ -65,6 +65,8 @@ export type TrendVideo = {
   virality_score: number;
 
   thumbnail_url: string;
+  region_code: string | null;
+  category_title: string | null;
 
   youtube_url: string;    // computed from backend
 };
@@ -89,6 +91,7 @@ export type PopularVideo = {
   thumbnail_url: string;
   source: string;
   region_code: string | null;
+  category_title: string | null;
 
   youtube_url: string;
 };
