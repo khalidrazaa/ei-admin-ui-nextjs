@@ -21,8 +21,12 @@ const REGION_OPTIONS = [
   { label: "Canada", value: "CA" },
   { label: "Australia", value: "AU" },
 ];
-
 const ALL_CATEGORIES = "all";
+const SOURCE_OPTIONS = [
+  { label: "All Videos", value: "all" },
+  { label: "Popular", value: "POPULAR" },
+  { label: "Niche", value: "NICHE" },
+];
 
 function VideoCardSkeleton() {
   return (
@@ -55,6 +59,7 @@ export default function YoutubePopularPage() {
   const [regionCode, setRegionCode] = useState("");
   const [niche, setNiche] = useState("");
   const [selectedCategory, setSelectedCategory] = useState(ALL_CATEGORIES);
+  const [sourceType, setSourceType] = useState("");
 
   const filters = useMemo(
     () => ({
@@ -63,8 +68,9 @@ export default function YoutubePopularPage() {
       days: days === "" ? null : days,
       region_code: regionCode || undefined,
       niche: niche || undefined,
+      source: sourceType === "all" ? undefined : sourceType || undefined,
     }),
-    [days, minViews, regionCode, sort, niche]
+    [days, minViews, regionCode, sort, niche, sourceType]
   );
 
   const categories = useMemo(() => {
@@ -206,6 +212,19 @@ export default function YoutubePopularPage() {
           <div className="flex flex-wrap items-center gap-2">
             {/* Filters */}
             <div className="flex flex-wrap items-center gap-2">
+
+              <select
+                value={sourceType}
+                onChange={(e) => setSourceType(e.target.value)}
+                className="rounded border px-2 py-1 text-sm"
+              >
+                {SOURCE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+
               <select
                 value={regionCode}
                 onChange={(e) => setRegionCode(e.target.value)}
