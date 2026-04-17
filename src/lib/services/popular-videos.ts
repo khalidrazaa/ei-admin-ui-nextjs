@@ -7,6 +7,7 @@ export type PopularVideoFilters = {
   min_views?: number;
   days?: VideoDays | null;
   region_code?: string;
+  source?: string;
 };
 
 export async function getPopularVideos(
@@ -18,6 +19,7 @@ export async function getPopularVideos(
   if (params.min_views) query.append("min_views", String(params.min_views));
   if (params.days) query.append("days", String(params.days));
   if (params.region_code) query.append("region_code", params.region_code);
+  if (params.source) query.append("source", params.source);
 
   return apiFetch(
     `/admin/youtube-scan/popular/videos?${query.toString()}`,
