@@ -1,6 +1,8 @@
 "use client";
+export const dynamic = "force-dynamic";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import Button from "@/components/ui/Button";
@@ -79,7 +81,7 @@ function VideoCardSkeleton() {
   );
 }
 
-export default function NichesPage() {
+function NichesPageContent() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -413,6 +415,8 @@ export default function NichesPage() {
     return <div>Loading niches...</div>;
   }
 
+
+
   return (
     <div className="flex h-[calc(100vh-56px)] overflow-hidden">
       <div
@@ -740,3 +744,13 @@ export default function NichesPage() {
     </div>
   );
 }
+
+export default function NichesPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <NichesPageContent />
+    </Suspense>
+  );
+}
+
+
