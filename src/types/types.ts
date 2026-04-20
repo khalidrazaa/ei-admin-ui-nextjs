@@ -14,7 +14,7 @@ export interface KeywordResponse {
   suggestions: string[];
 }
 
-export interface ScrapeTrendsResponse  {
+export interface ScrapeTrendsResponse {
   status: string;
   geo: string;
   hours: string;
@@ -25,7 +25,7 @@ export interface ScrapeTrendsResponse  {
     modified_count: number;
     categorized_count: number;
   };
-};
+}
 
 export interface ScrapeYTResponse {
   niche_id: number;
@@ -46,52 +46,63 @@ export interface Trend {
   explore_link?: string;
 }
 
-export type TrendVideo = {
-  id: number;
+export type VideoTrendStage =
+  | "watchlist"
+  | "emerging"
+  | "breakout"
+  | "trending"
+  | "sustained_demand";
 
-  keyword_id: number;
-  youtube_video_id: string;
-
-  title: string;
-  channel_title: string;
-
-  view_count: number;
-  like_count: number | null;
-  comment_count: number | null;
-
-  published_at: string;   // ISO string from backend
-  scanned_at: string;
-
-  virality_score: number;
-
-  thumbnail_url: string;
-  region_code: string | null;
-  category_title: string | null;
-
-  youtube_url: string;    // computed from backend
-};
-
-export type PopularVideo = {
+export type BaseVideoInsight = {
   id: number;
   keyword_id: number | null;
   youtube_video_id: string;
+  youtube_channel_id: string | null;
 
   title: string;
+  description: string | null;
   channel_title: string;
+  channel_custom_url: string | null;
+  channel_description: string | null;
+  channel_country: string | null;
 
   view_count: number;
   like_count: number | null;
   comment_count: number | null;
+  subscriber_count: number | null;
+  channel_view_count: number | null;
+  channel_video_count: number | null;
+  hidden_subscriber_count: boolean | null;
 
   published_at: string;
+  channel_published_at: string | null;
   scanned_at: string;
 
   virality_score: number;
+  speed_score: number | null;
+  breakout_score: number | null;
+  engagement_score: number | null;
+  freshness_score: number | null;
+  confidence_score: number | null;
+  trend_stage: VideoTrendStage | null;
 
   thumbnail_url: string;
-  source: string;
-  region_code: string | null;
+  channel_thumbnail_url: string | null;
+  category_id: string | null;
   category_title: string | null;
+  source: string | null;
+  region_code: string | null;
 
   youtube_url: string;
+  age_hours: number;
+  views_per_hour: number;
+  likes_per_1k_views: number;
+  comments_per_1k_views: number;
+  channel_avg_views: number;
+  views_vs_channel_average: number;
+  views_vs_subscribers: number | null;
 };
+
+export type TrendVideo = BaseVideoInsight;
+
+export type PopularVideo = BaseVideoInsight;
