@@ -2,13 +2,17 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import VideoCard from "@/components/ui/VideoCard";
 import Button from "@/components/ui/Button";
+import VideoCard from "@/components/ui/VideoCard";
 import {
   getPopularVideos,
   scanPopularVideos,
 } from "@/lib/services/popular-videos";
 import { VideoDays, VideoSort } from "@/lib/services/scaned-trends";
+import {
+  formatCompactNumber,
+  formatFixedNumber,
+} from "@/lib/utils/formatters";
 import { PopularVideo } from "@/types/types";
 
 const SORT_OPTIONS: VideoSort[] = ["score", "views", "recent"];
@@ -57,7 +61,6 @@ export default function YoutubePopularPage() {
   const [minViews, setMinViews] = useState("");
   const [days, setDays] = useState<VideoDays | "">("");
   const [regionCode, setRegionCode] = useState("");
-  const [niche, setNiche] = useState("");
   const [selectedCategory, setSelectedCategory] = useState(ALL_CATEGORIES);
   const [sourceType, setSourceType] = useState("");
 
@@ -67,10 +70,9 @@ export default function YoutubePopularPage() {
       min_views: minViews ? Number(minViews) : undefined,
       days: days === "" ? null : days,
       region_code: regionCode || undefined,
-      niche: niche || undefined,
       source: sourceType === "all" ? undefined : sourceType || undefined,
     }),
-    [days, minViews, regionCode, sort, niche, sourceType]
+    [days, minViews, regionCode, sort, sourceType]
   );
 
   const categories = useMemo(() => {
@@ -102,8 +104,39 @@ export default function YoutubePopularPage() {
       return videos;
     }
 
-    return videos.filter((video) => (video.category_title || "uncategorized") === selectedCategory);
+    return videos.filter(
+      (video) => (video.category_title || "uncategorized") === selectedCategory
+    );
   }, [selectedCategory, videos]);
+
+  const summary = useMemo(() => {
+    const stageCounts = {
+      trending: 0,
+      breakout: 0,
+      emerging: 0,
+      watchlist: 0,
+    };
+
+    let totalScore = 0;
+    let totalViewsPerHour = 0;
+
+    visibleVideos.forEach((video) => {
+      totalScore += video.virality_score;
+      totalViewsPerHour += video.views_per_hour;
+
+      if (video.trend_stage === "trending") stageCounts.trending += 1;
+      else if (video.trend_stage === "breakout") stageCounts.breakout += 1;
+      else if (video.trend_stage === "emerging") stageCounts.emerging += 1;
+      else stageCounts.watchlist += 1;
+    });
+
+    return {
+      total: visibleVideos.length,
+      avgScore: visibleVideos.length ? totalScore / visibleVideos.length : 0,
+      avgViewsPerHour: visibleVideos.length ? totalViewsPerHour / visibleVideos.length : 0,
+      ...stageCounts,
+    };
+  }, [visibleVideos]);
 
   useEffect(() => {
     async function loadVideos() {
@@ -166,7 +199,6 @@ export default function YoutubePopularPage() {
         </div>
 
         <div className="mb-4">
-
           <div className="space-y-2">
             {categories.map((category) => {
               const isActive = selectedCategory === category.key;
@@ -198,21 +230,15 @@ export default function YoutubePopularPage() {
 
       <section className="flex-1 overflow-y-auto p-4">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          {/* LEFT: Title + count */}
-          <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-            {selectedCategory === ALL_CATEGORIES
-              ? "All Popular Videos"
-              : `${selectedCategory}`}
+          <h2 className="flex items-center gap-2 text-lg font-semibold text-gray-900">
+            {selectedCategory === ALL_CATEGORIES ? "All Popular Videos" : selectedCategory}
             <span className="text-sm font-normal text-gray-500">
               ({visibleVideos.length} video{visibleVideos.length === 1 ? "" : "s"})
             </span>
           </h2>
-            
-          {/* RIGHT: Filters + actions */}
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Filters */}
-            <div className="flex flex-wrap items-center gap-2">
 
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <select
                 value={sourceType}
                 onChange={(e) => setSourceType(e.target.value)}
@@ -236,7 +262,7 @@ export default function YoutubePopularPage() {
                   </option>
                 ))}
               </select>
-              
+
               <select
                 value={sort}
                 onChange={(e) => setSort(e.target.value as VideoSort)}
@@ -252,7 +278,7 @@ export default function YoutubePopularPage() {
                   </option>
                 ))}
               </select>
-              
+
               <input
                 type="number"
                 min="0"
@@ -261,7 +287,7 @@ export default function YoutubePopularPage() {
                 onChange={(e) => setMinViews(e.target.value)}
                 className="w-28 rounded border px-2 py-1 text-sm"
               />
-          
+
               <select
                 value={days}
                 onChange={(e) =>
@@ -277,9 +303,8 @@ export default function YoutubePopularPage() {
                 ))}
               </select>
             </div>
-              
-            {/* RIGHT SIDE (gap added here 👇) */}
-            <div className="flex items-center gap-3 ml-4">
+
+            <div className="ml-4 flex items-center gap-3">
               {message && (
                 <span
                   className={`text-sm ${
@@ -293,7 +318,7 @@ export default function YoutubePopularPage() {
                   {message}
                 </span>
               )}
-          
+
               <Button onClick={handleScanNow} disabled={scanning}>
                 {scanning ? "Scanning" : "Scan Now"}
               </Button>
@@ -301,7 +326,51 @@ export default function YoutubePopularPage() {
           </div>
         </div>
 
+        <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
+              Visible Videos
+            </div>
+            <div className="mt-2 text-2xl font-semibold text-gray-900">{summary.total}</div>
+            <div className="mt-1 text-sm text-gray-500">
+              Avg score {formatFixedNumber(summary.avgScore, 1)}
+            </div>
+          </div>
 
+          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
+              Trending
+            </div>
+            <div className="mt-2 text-2xl font-semibold text-rose-600">{summary.trending}</div>
+            <div className="mt-1 text-sm text-gray-500">Highest confidence picks</div>
+          </div>
+
+          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
+              Breakout
+            </div>
+            <div className="mt-2 text-2xl font-semibold text-orange-600">{summary.breakout}</div>
+            <div className="mt-1 text-sm text-gray-500">Beating creator baseline</div>
+          </div>
+
+          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
+              Emerging
+            </div>
+            <div className="mt-2 text-2xl font-semibold text-sky-600">{summary.emerging}</div>
+            <div className="mt-1 text-sm text-gray-500">Fresh videos worth tracking</div>
+          </div>
+
+          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
+              Average VPH
+            </div>
+            <div className="mt-2 text-2xl font-semibold text-gray-900">
+              {formatCompactNumber(summary.avgViewsPerHour)}
+            </div>
+            <div className="mt-1 text-sm text-gray-500">Views per hour in result set</div>
+          </div>
+        </div>
 
         {loading ? (
           <div className="flex flex-col gap-4">
@@ -316,7 +385,7 @@ export default function YoutubePopularPage() {
         ) : (
           <div className="flex flex-col gap-4">
             {visibleVideos.map((video) => (
-              <div key={video.id}>  
+              <div key={video.id}>
                 <VideoCard video={video} />
               </div>
             ))}

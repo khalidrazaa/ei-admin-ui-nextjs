@@ -22,6 +22,10 @@ import {
   VideoDays,
   VideoSort,
 } from "@/lib/services/scaned-trends";
+import {
+  formatCompactNumber,
+  formatFixedNumber,
+} from "@/lib/utils/formatters";
 import { TrendVideo } from "@/types/types";
 
 const SORT_OPTIONS: VideoSort[] = ["score", "views", "recent"];
@@ -123,6 +127,35 @@ function NichesPageContent() {
     }),
     [days, minViews, sort]
   );
+
+  const videoSummary = useMemo(() => {
+    const stageCounts = {
+      trending: 0,
+      breakout: 0,
+      emerging: 0,
+      watchlist: 0,
+    };
+
+    let totalScore = 0;
+    let totalViewsPerHour = 0;
+
+    videos.forEach((video) => {
+      totalScore += video.virality_score;
+      totalViewsPerHour += video.views_per_hour;
+
+      if (video.trend_stage === "trending") stageCounts.trending += 1;
+      else if (video.trend_stage === "breakout") stageCounts.breakout += 1;
+      else if (video.trend_stage === "emerging") stageCounts.emerging += 1;
+      else stageCounts.watchlist += 1;
+    });
+
+    return {
+      total: videos.length,
+      avgScore: videos.length ? totalScore / videos.length : 0,
+      avgViewsPerHour: videos.length ? totalViewsPerHour / videos.length : 0,
+      ...stageCounts,
+    };
+  }, [videos]);
 
   function updateQueryParams(nextValues: {
     niche?: number | null;
@@ -708,6 +741,60 @@ function NichesPageContent() {
                 </Button>
 
 
+              </div>
+            </div>
+
+            <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+              <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                  Videos
+                </div>
+                <div className="mt-2 text-2xl font-semibold text-gray-900">
+                  {videoSummary.total}
+                </div>
+                <div className="mt-1 text-sm text-gray-500">
+                  Avg score {formatFixedNumber(videoSummary.avgScore, 1)}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                  Trending
+                </div>
+                <div className="mt-2 text-2xl font-semibold text-rose-600">
+                  {videoSummary.trending}
+                </div>
+                <div className="mt-1 text-sm text-gray-500">Strongest niche signals</div>
+              </div>
+
+              <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                  Breakout
+                </div>
+                <div className="mt-2 text-2xl font-semibold text-orange-600">
+                  {videoSummary.breakout}
+                </div>
+                <div className="mt-1 text-sm text-gray-500">Beating creator averages</div>
+              </div>
+
+              <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                  Emerging
+                </div>
+                <div className="mt-2 text-2xl font-semibold text-sky-600">
+                  {videoSummary.emerging}
+                </div>
+                <div className="mt-1 text-sm text-gray-500">Fresh uploads to watch</div>
+              </div>
+
+              <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+                <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                  Average VPH
+                </div>
+                <div className="mt-2 text-2xl font-semibold text-gray-900">
+                  {formatCompactNumber(videoSummary.avgViewsPerHour)}
+                </div>
+                <div className="mt-1 text-sm text-gray-500">Views per hour in this niche</div>
               </div>
             </div>
 
