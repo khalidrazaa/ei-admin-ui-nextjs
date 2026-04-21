@@ -2,7 +2,18 @@
 import { apiFetch } from "@/lib/api";
 import { TrendVideo } from "@/types/types";
 
-export type VideoSort = "score" | "views" | "recent";
+export type VideoSort =
+  | "score"
+  | "trending"
+  | "breakout"
+  | "emerging"
+  | "sustained_demand"
+  | "watchlist"
+  | "vph"
+  | "breakout_score"
+  | "engagement"
+  | "views"
+  | "recent";
 export type VideoDays = 7 | 30;
 
 export type VideoFilters = {

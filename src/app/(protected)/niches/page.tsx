@@ -28,7 +28,19 @@ import {
 } from "@/lib/utils/formatters";
 import { TrendVideo } from "@/types/types";
 
-const SORT_OPTIONS: VideoSort[] = ["score", "views", "recent"];
+const SORT_OPTIONS: Array<{ value: VideoSort; label: string }> = [
+  { value: "score", label: "Trending Score" },
+  { value: "trending", label: "Trending" },
+  { value: "breakout", label: "Breakout" },
+  { value: "emerging", label: "Emerging" },
+  { value: "sustained_demand", label: "Sustained Demand" },
+  { value: "watchlist", label: "Watchlist" },
+  { value: "vph", label: "Views / Hour" },
+  { value: "breakout_score", label: "Breakout Score" },
+  { value: "engagement", label: "Engagement" },
+  { value: "views", label: "Views" },
+  { value: "recent", label: "Recent" },
+];
 const DAY_OPTIONS: VideoDays[] = [7, 30];
 
 function parseSelectedNiche(value: string | null): number | null {
@@ -41,7 +53,7 @@ function parseSelectedNiche(value: string | null): number | null {
 }
 
 function parseSort(value: string | null): VideoSort {
-  return SORT_OPTIONS.includes(value as VideoSort)
+  return SORT_OPTIONS.some((option) => option.value === value)
     ? (value as VideoSort)
     : "score";
 }
@@ -680,9 +692,11 @@ function NichesPageContent() {
                   }}
                   className="rounded border px-2 py-1 text-sm"
                 >
-                  <option value="score">Score</option>
-                  <option value="views">Views</option>
-                  <option value="recent">Recent</option>
+                  {SORT_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
 
                 <input

@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import { PopularVideo, TrendVideo, VideoTrendStage } from "@/types/types";
 import {
   formatCompactNumber,
@@ -9,6 +11,8 @@ import {
 
 type Props = {
   video: TrendVideo | PopularVideo;
+  sidebarActions?: ReactNode;
+  sidebarMessage?: ReactNode;
 };
 
 const stageStyles: Record<VideoTrendStage, string> = {
@@ -54,88 +58,100 @@ function MetricChip({
   );
 }
 
-export default function VideoCard({ video }: Props) {
+export default function VideoCard({ video, sidebarActions, sidebarMessage }: Props) {
   const trendStage = video.trend_stage ?? "watchlist";
   const stageTone = stageStyles[trendStage as VideoTrendStage] ?? stageStyles.watchlist;
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition hover:border-gray-300">
-      <div className="flex gap-4">
-        <a
-          href={video.youtube_url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="shrink-0"
-        >
-          <img
-            src={video.thumbnail_url}
-            className="h-24 w-40 rounded-lg object-cover"
-            alt={video.title}
-          />
-        </a>
+      <div className="flex flex-col gap-4 md:flex-row">
+        <div className="flex w-full shrink-0 flex-col gap-2 md:w-40">
+          <a
+            href={video.youtube_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="shrink-0"
+          >
+            <img
+              src={video.thumbnail_url}
+              className="h-24 w-full rounded-lg object-cover"
+              alt={video.title}
+            />
+          </a>
+
+          {sidebarActions && <div className="flex flex-col gap-2">{sidebarActions}</div>}
+          {sidebarMessage}
+        </div>
 
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <div className="min-w-0">
-              <a
-                href={video.youtube_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="line-clamp-2 font-semibold text-gray-900 hover:text-blue-700"
-              >
-                {video.title}
-              </a>
+          <div className="min-w-0">
+            <a
+              href={video.youtube_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="line-clamp-2 font-semibold text-gray-900 hover:text-blue-700"
+            >
+              {video.title}
+            </a>
 
-              <p className="mt-1 text-sm text-gray-500">
-                {video.channel_title}
-                {video.channel_country ? ` | ${video.channel_country}` : ""}
-                {` | ${formatRelativeTime(video.published_at)}`}
-                {` | age ${formatHours(video.age_hours)}`}
-              </p>
-            </div>
-
-            <div className="flex flex-wrap justify-end gap-2">
-              <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${stageTone}`}>
-                {stageLabel(video.trend_stage)}
-              </span>
-              {video.source && (
-                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
-                  {video.source}
-                </span>
+            <p className="mt-1 flex flex-wrap gap-x-2 text-sm text-gray-500">
+              <span>{video.channel_title}</span>
+              {video.channel_country && <span>| {video.channel_country}</span>}
+              <span>| {formatRelativeTime(video.published_at)}</span>
+              <span>| age {formatHours(video.age_hours)}</span>
+              <span>| Likes {formatCompactNumber(video.like_count ?? 0)}</span>
+              <span>| Comments {formatCompactNumber(video.comment_count ?? 0)}</span>
+              {video.views_vs_subscribers !== null && (
+                <span>| Views/Subs {formatMultiplier(video.views_vs_subscribers)}</span>
               )}
-              {video.region_code && (
-                <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-700">
-                  {video.region_code}
-                </span>
-              )}
-            </div>
+              {video.source && <span>| {video.source}</span>}
+              {video.region_code && <span>| {video.region_code}</span>}
+              <span>| Scanned {formatRelativeTime(video.scanned_at)}</span>
+            </p>
           </div>
 
           {video.description && (
             <p className="mt-2 line-clamp-2 text-sm text-gray-600">{video.description}</p>
           )}
 
-          <div className="mt-3 flex flex-wrap gap-2">
-            <MetricChip label="Views" value={formatCompactNumber(video.view_count)} />
-            <MetricChip label="VPH" value={formatCompactNumber(video.views_per_hour)} tone="blue" />
-            <MetricChip
-              label="Score"
-              value={formatFixedNumber(video.virality_score, 1)}
-              tone="green"
-            />
-            <MetricChip
-              label="Breakout"
-              value={formatFixedNumber(video.breakout_score, 1)}
-              tone="amber"
-            />
-            <MetricChip
-              label="Engage"
-              value={formatFixedNumber(video.engagement_score, 1)}
-              tone="purple"
-            />
-            {video.category_title && (
-              <MetricChip label="Category" value={video.category_title} tone="neutral" />
-            )}
+          <div className="mt-3 flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+            <div className="flex flex-wrap gap-2">
+              <MetricChip label="Views" value={formatCompactNumber(video.view_count)} />
+              <MetricChip
+                label="VPH"
+                value={formatCompactNumber(video.views_per_hour)}
+                tone="blue"
+              />
+              <MetricChip
+                label="Score"
+                value={formatFixedNumber(video.virality_score, 1)}
+                tone="green"
+              />
+              <MetricChip
+                label="Breakout"
+                value={formatFixedNumber(video.breakout_score, 1)}
+                tone="amber"
+              />
+              <MetricChip
+                label="Engage"
+                value={formatFixedNumber(video.engagement_score, 1)}
+                tone="purple"
+              />
+              {video.category_title && (
+                <MetricChip label="Category" value={video.category_title} tone="neutral" />
+              )}
+            </div>
+
+            <div className="flex flex-wrap justify-start gap-2 xl:justify-end">
+              <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${stageTone}`}>
+                {stageLabel(video.trend_stage)}
+              </span>
+              {video.has_transcript && (
+                <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700">
+                  Transcript Ready
+                </span>
+              )}
+            </div>
           </div>
 
           <div className="mt-3 grid gap-2 text-xs text-gray-600 sm:grid-cols-2 lg:grid-cols-4">
@@ -179,14 +195,12 @@ export default function VideoCard({ video }: Props) {
             </div>
           </div>
 
-          <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-gray-500">
-            <span>Likes {formatCompactNumber(video.like_count ?? 0)}</span>
-            <span>Comments {formatCompactNumber(video.comment_count ?? 0)}</span>
-            {video.views_vs_subscribers !== null && (
-              <span>Views/Subs {formatMultiplier(video.views_vs_subscribers)}</span>
-            )}
-            <span>Scanned {formatRelativeTime(video.scanned_at)}</span>
-          </div>
+          {video.transcript_language && (
+            <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-gray-500">
+              <span>Transcript {video.transcript_language}</span>
+            </div>
+          )}
+
         </div>
       </div>
     </div>
