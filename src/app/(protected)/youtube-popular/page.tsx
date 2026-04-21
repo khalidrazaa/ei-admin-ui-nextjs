@@ -3,8 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 
 import Button from "@/components/ui/Button";
+import Toast from "@/components/ui/Toast";
+import TranscriptModal from "@/components/ui/TranscriptModal";
 import VideoCard from "@/components/ui/VideoCard";
 import {
+  fetchVideoTranscript,
+  generateDraftArticle,
+  getVideoTranscript,
   getPopularVideos,
   scanPopularVideos,
 } from "@/lib/services/popular-videos";
@@ -13,9 +18,21 @@ import {
   formatCompactNumber,
   formatFixedNumber,
 } from "@/lib/utils/formatters";
-import { PopularVideo } from "@/types/types";
+import { PopularVideo, VideoTranscript } from "@/types/types";
 
-const SORT_OPTIONS: VideoSort[] = ["score", "views", "recent"];
+const SORT_OPTIONS: Array<{ value: VideoSort; label: string }> = [
+  { value: "score", label: "Trending Score" },
+  { value: "trending", label: "Trending" },
+  { value: "breakout", label: "Breakout" },
+  { value: "emerging", label: "Emerging" },
+  { value: "sustained_demand", label: "Sustained Demand" },
+  { value: "watchlist", label: "Watchlist" },
+  { value: "vph", label: "Views / Hour" },
+  { value: "breakout_score", label: "Breakout Score" },
+  { value: "engagement", label: "Engagement" },
+  { value: "views", label: "Views" },
+  { value: "recent", label: "Recent" },
+];
 const DAY_OPTIONS: VideoDays[] = [7, 30];
 const REGION_OPTIONS = [
   { label: "All Regions", value: "" },
@@ -56,7 +73,14 @@ export default function YoutubePopularPage() {
   const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [messageType, setMessageType] = useState<"success" | "error" | null>(null);
+  const [messageType, setMessageType] = useState<"success" | "error" | "info" | null>(null);
+  const [transcriptErrors, setTranscriptErrors] = useState<Record<number, string>>({});
+  const [expandedTranscriptErrorId, setExpandedTranscriptErrorId] = useState<number | null>(null);
+  const [transcriptLoadingId, setTranscriptLoadingId] = useState<number | null>(null);
+  const [transcriptReadLoadingId, setTranscriptReadLoadingId] = useState<number | null>(null);
+  const [draftLoadingId, setDraftLoadingId] = useState<number | null>(null);
+  const [activeTranscript, setActiveTranscript] = useState<VideoTranscript | null>(null);
+  const [transcriptOpen, setTranscriptOpen] = useState(false);
   const [sort, setSort] = useState<VideoSort>("score");
   const [minViews, setMinViews] = useState("");
   const [days, setDays] = useState<VideoDays | "">("");
@@ -139,6 +163,19 @@ export default function YoutubePopularPage() {
   }, [visibleVideos]);
 
   useEffect(() => {
+    if (!message || messageType === null) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setMessage(null);
+      setMessageType(null);
+    }, 4500);
+
+    return () => window.clearTimeout(timeout);
+  }, [message, messageType]);
+
+  useEffect(() => {
     async function loadVideos() {
       try {
         setLoading(true);
@@ -174,7 +211,7 @@ export default function YoutubePopularPage() {
     try {
       setScanning(true);
       setMessage("Scanning and refreshing popular YouTube videos...");
-      setMessageType(null);
+      setMessageType("info");
 
       await scanPopularVideos();
       const refreshed = await getPopularVideos(filters);
@@ -188,6 +225,82 @@ export default function YoutubePopularPage() {
       setMessageType("error");
     } finally {
       setScanning(false);
+    }
+  }
+
+  async function handleFetchTranscript(videoId: number) {
+    try {
+      setTranscriptLoadingId(videoId);
+      setMessage("Fetching transcript and saving it...");
+      setMessageType("info");
+
+      const updatedVideo = await fetchVideoTranscript(videoId);
+      setVideos((current) =>
+        current.map((video) => (video.id === videoId ? updatedVideo : video))
+      );
+      setTranscriptErrors((current) => {
+        const next = { ...current };
+        delete next[videoId];
+        return next;
+      });
+      if (expandedTranscriptErrorId === videoId) {
+        setExpandedTranscriptErrorId(null);
+      }
+
+      setMessage("Transcript fetched and stored successfully.");
+      setMessageType("success");
+    } catch (err) {
+      const errorMessage =
+        err instanceof Error ? err.message : "Failed to fetch transcript";
+      console.error("Failed to fetch transcript", err);
+      setTranscriptErrors((current) => ({ ...current, [videoId]: errorMessage }));
+      setExpandedTranscriptErrorId(videoId);
+      setMessage(errorMessage);
+      setMessageType("error");
+    } finally {
+      setTranscriptLoadingId(null);
+    }
+  }
+
+  async function handleReadTranscript(videoId: number) {
+    try {
+      setTranscriptReadLoadingId(videoId);
+      setMessage("Loading transcript...");
+      setMessageType("info");
+
+      const transcript = await getVideoTranscript(videoId);
+      setActiveTranscript(transcript);
+      setTranscriptOpen(true);
+      setMessage(null);
+      setMessageType(null);
+    } catch (err) {
+      console.error("Failed to load transcript", err);
+      setMessage(
+        err instanceof Error ? err.message : "Failed to load transcript"
+      );
+      setMessageType("error");
+    } finally {
+      setTranscriptReadLoadingId(null);
+    }
+  }
+
+  async function handleGenerateDraft(videoId: number) {
+    try {
+      setDraftLoadingId(videoId);
+      setMessage("Sending transcript to Gemini and saving a draft article...");
+      setMessageType("info");
+
+      const article = await generateDraftArticle(videoId);
+      setMessage(`Draft article saved: ${article.title}`);
+      setMessageType("success");
+    } catch (err) {
+      console.error("Failed to generate draft article", err);
+      setMessage(
+        err instanceof Error ? err.message : "Failed to generate draft article"
+      );
+      setMessageType("error");
+    } finally {
+      setDraftLoadingId(null);
     }
   }
 
@@ -230,100 +343,72 @@ export default function YoutubePopularPage() {
 
       <section className="flex-1 overflow-y-auto p-4">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="flex items-center gap-2 text-lg font-semibold text-gray-900">
-            {selectedCategory === ALL_CATEGORIES ? "All Popular Videos" : selectedCategory}
-            <span className="text-sm font-normal text-gray-500">
-              ({visibleVideos.length} video{visibleVideos.length === 1 ? "" : "s"})
-            </span>
-          </h2>
-
           <div className="flex flex-wrap items-center gap-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <select
-                value={sourceType}
-                onChange={(e) => setSourceType(e.target.value)}
-                className="rounded border px-2 py-1 text-sm"
-              >
-                {SOURCE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+            <select
+              value={sourceType}
+              onChange={(e) => setSourceType(e.target.value)}
+              className="rounded border px-2 py-1 text-sm"
+            >
+              {SOURCE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
 
-              <select
-                value={regionCode}
-                onChange={(e) => setRegionCode(e.target.value)}
-                className="rounded border px-2 py-1 text-sm"
-              >
-                {REGION_OPTIONS.map((option) => (
-                  <option key={option.label} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
+            <select
+              value={regionCode}
+              onChange={(e) => setRegionCode(e.target.value)}
+              className="rounded border px-2 py-1 text-sm"
+            >
+              {REGION_OPTIONS.map((option) => (
+                <option key={option.label} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
 
-              <select
-                value={sort}
-                onChange={(e) => setSort(e.target.value as VideoSort)}
-                className="rounded border px-2 py-1 text-sm"
-              >
-                {SORT_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {option === "score"
-                      ? "Score"
-                      : option === "views"
-                        ? "Views"
-                        : "Recent"}
-                  </option>
-                ))}
-              </select>
+            <select
+              value={sort}
+              onChange={(e) => setSort(e.target.value as VideoSort)}
+              className="rounded border px-2 py-1 text-sm"
+            >
+              {SORT_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
 
-              <input
-                type="number"
-                min="0"
-                placeholder="Min views"
-                value={minViews}
-                onChange={(e) => setMinViews(e.target.value)}
-                className="w-28 rounded border px-2 py-1 text-sm"
-              />
+            <input
+              type="number"
+              min="0"
+              placeholder="Min views"
+              value={minViews}
+              onChange={(e) => setMinViews(e.target.value)}
+              className="w-28 rounded border px-2 py-1 text-sm"
+            />
 
-              <select
-                value={days}
-                onChange={(e) =>
-                  setDays(e.target.value ? (Number(e.target.value) as VideoDays) : "")
-                }
-                className="rounded border px-2 py-1 text-sm"
-              >
-                <option value="">All time</option>
-                {DAY_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    Last {option} days
-                  </option>
-                ))}
-              </select>
-            </div>
+            <select
+              value={days}
+              onChange={(e) =>
+                setDays(e.target.value ? (Number(e.target.value) as VideoDays) : "")
+              }
+              className="rounded border px-2 py-1 text-sm"
+            >
+              <option value="">All time</option>
+              {DAY_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  Last {option} days
+                </option>
+              ))}
+            </select>
 
-            <div className="ml-4 flex items-center gap-3">
-              {message && (
-                <span
-                  className={`text-sm ${
-                    messageType === "error"
-                      ? "text-red-600"
-                      : messageType === "success"
-                        ? "text-green-700"
-                        : "text-gray-600"
-                  }`}
-                >
-                  {message}
-                </span>
-              )}
-
-              <Button onClick={handleScanNow} disabled={scanning}>
-                {scanning ? "Scanning" : "Scan Now"}
-              </Button>
-            </div>
           </div>
+
+          <Button onClick={handleScanNow} disabled={scanning}>
+            {scanning ? "Scanning" : "Scan Now"}
+          </Button>
         </div>
 
         <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
@@ -386,11 +471,101 @@ export default function YoutubePopularPage() {
           <div className="flex flex-col gap-4">
             {visibleVideos.map((video) => (
               <div key={video.id}>
-                <VideoCard video={video} />
+                <VideoCard
+                  video={video}
+                  sidebarActions={
+                    <>
+                      <Button
+                        onClick={() => handleFetchTranscript(video.id)}
+                        disabled={transcriptLoadingId === video.id}
+                        className="w-full text-sm"
+                      >
+                        {transcriptLoadingId === video.id
+                          ? "Fetching..."
+                          : video.has_transcript
+                            ? "Refresh Transcript"
+                            : "Fetch Transcript"}
+                      </Button>
+
+                      <Button
+                        variant="secondary"
+                        onClick={() => handleReadTranscript(video.id)}
+                        disabled={!video.has_transcript || transcriptReadLoadingId === video.id}
+                        className="text-sm"
+                      >
+                        {transcriptReadLoadingId === video.id
+                          ? "Opening..."
+                          : "Read Transcript"}
+                      </Button>
+                    </>
+                  }
+                  sidebarMessage={
+                    transcriptErrors[video.id] ? (
+                      <div className="mt-1">
+                        <button
+                          type="button"
+                          title={transcriptErrors[video.id]}
+                          onClick={() =>
+                            setExpandedTranscriptErrorId((current) =>
+                              current === video.id ? null : video.id
+                            )
+                          }
+                          className="flex w-full items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-left text-xs text-red-700 transition hover:bg-red-100"
+                        >
+                          <span className="text-sm leading-none">!</span>
+                          <span className="font-medium">Transcript Error</span>
+                        </button>
+                        {expandedTranscriptErrorId === video.id && (
+                          <div className="relative mt-2">
+                            <div className="absolute left-0 top-0 z-20 w-72 rounded-xl border border-red-200 bg-white px-3 py-3 text-xs text-red-700 shadow-xl">
+                              <div className="mb-2 flex items-start justify-between gap-3">
+                                <span className="font-semibold text-red-800">
+                                  Transcript Error
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedTranscriptErrorId(null)}
+                                  className="text-xs font-medium text-red-500 transition hover:text-red-700"
+                                >
+                                  X
+                                </button>
+                              </div>
+                              <div>{transcriptErrors[video.id]}</div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : undefined
+                  }
+                />
               </div>
             ))}
           </div>
         )}
+
+        <TranscriptModal
+          open={transcriptOpen}
+          transcript={activeTranscript}
+          creatingDraft={draftLoadingId === activeTranscript?.id}
+          onCreateDraft={() => {
+            if (activeTranscript) {
+              void handleGenerateDraft(activeTranscript.id);
+            }
+          }}
+          onClose={() => {
+            setTranscriptOpen(false);
+            setActiveTranscript(null);
+          }}
+        />
+
+        <Toast
+          message={message}
+          type={messageType}
+          onClose={() => {
+            setMessage(null);
+            setMessageType(null);
+          }}
+        />
       </section>
     </div>
   );

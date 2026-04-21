@@ -2,11 +2,30 @@ export interface Article {
   id: number;
   title: string;
   slug: string;
-  category: string;
-  subcategory: string;
+  seo_title: string | null;
+  category: string | null;
+  subcategory: string | null;
   status: "draft" | "published";
-  createdAt: string;
-  content: string;
+  created_at: string;
+  updated_at: string | null;
+  published_at: string | null;
+  drafted_at: string | null;
+  content: string | null;
+  excerpt: string | null;
+  reading_time: number | null;
+  tags: string[];
+  keywords: string[];
+  host_site: string;
+  language: string | null;
+  meta_description: string | null;
+  canonical_url: string | null;
+  schema_type: string | null;
+  open_graph_title: string | null;
+  open_graph_description: string | null;
+  open_graph_image: string | null;
+  featured_image_url: string | null;
+  image_alt_text: string | null;
+  is_featured: boolean;
 }
 
 export interface KeywordResponse {
@@ -25,6 +44,16 @@ export interface ScrapeTrendsResponse {
     modified_count: number;
     categorized_count: number;
   };
+}
+
+export interface VideoTranscript {
+  id: number;
+  title: string;
+  youtube_video_id: string;
+  transcript_text: string;
+  transcript_language: string | null;
+  transcript_source: string | null;
+  transcript_fetched_at: string | null;
 }
 
 export interface ScrapeYTResponse {
@@ -90,6 +119,11 @@ export type BaseVideoInsight = {
   channel_thumbnail_url: string | null;
   category_id: string | null;
   category_title: string | null;
+  transcript_language_code: string | null;
+  transcript_language: string | null;
+  transcript_source: string | null;
+  transcript_error: string | null;
+  transcript_fetched_at: string | null;
   source: string | null;
   region_code: string | null;
 
@@ -101,6 +135,8 @@ export type BaseVideoInsight = {
   channel_avg_views: number;
   views_vs_channel_average: number;
   views_vs_subscribers: number | null;
+  has_transcript: boolean;
+  transcript_excerpt: string | null;
 };
 
 export type TrendVideo = BaseVideoInsight;

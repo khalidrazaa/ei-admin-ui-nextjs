@@ -1,5 +1,5 @@
 import { apiFetch } from "@/lib/api";
-import { PopularVideo } from "@/types/types";
+import { Article, PopularVideo, VideoTranscript } from "@/types/types";
 import { VideoDays, VideoSort } from "@/lib/services/scaned-trends";
 
 export type PopularVideoFilters = {
@@ -31,4 +31,28 @@ export async function scanPopularVideos(): Promise<{ status: string }> {
   return apiFetch("/admin/youtube-scan/popular/scan", {
     method: "POST",
   }) as Promise<{ status: string }>;
+}
+
+export async function fetchVideoTranscript(
+  videoId: number
+): Promise<PopularVideo> {
+  return apiFetch(`/admin/youtube-scan/videos/${videoId}/transcript`, {
+    method: "POST",
+  }) as Promise<PopularVideo>;
+}
+
+export async function getVideoTranscript(
+  videoId: number
+): Promise<VideoTranscript> {
+  return apiFetch(`/admin/youtube-scan/videos/${videoId}/transcript`, {
+    method: "GET",
+  }) as Promise<VideoTranscript>;
+}
+
+export async function generateDraftArticle(
+  videoId: number
+): Promise<Article> {
+  return apiFetch(`/admin/youtube-scan/videos/${videoId}/draft-article`, {
+    method: "POST",
+  }) as Promise<Article>;
 }
