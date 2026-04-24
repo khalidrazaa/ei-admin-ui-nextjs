@@ -56,6 +56,23 @@ export interface VideoTranscript {
   transcript_fetched_at: string | null;
 }
 
+export interface YouTubeRegion {
+  code: string;
+  name: string;
+}
+
+export interface PopularScanSettings {
+  region_codes: string[];
+  max_results: number;
+}
+
+export interface PopularScanRunResponse {
+  status: string;
+  regions: string[];
+  max_results: number;
+  total_processed: number;
+}
+
 export interface ScrapeYTResponse {
   niche_id: number;
   videos_saved: number;

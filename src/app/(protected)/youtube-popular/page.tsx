@@ -7,18 +7,26 @@ import Toast from "@/components/ui/Toast";
 import TranscriptModal from "@/components/ui/TranscriptModal";
 import VideoCard from "@/components/ui/VideoCard";
 import {
-  fetchVideoTranscript,
   generateDraftArticle,
+  getPopularScanRegions,
+  getPopularScanSettings,
   getVideoTranscript,
   getPopularVideos,
+  saveVideoTranscript,
   scanPopularVideos,
+  updatePopularScanSettings,
 } from "@/lib/services/popular-videos";
 import { VideoDays, VideoSort } from "@/lib/services/scaned-trends";
 import {
   formatCompactNumber,
   formatFixedNumber,
 } from "@/lib/utils/formatters";
-import { PopularVideo, VideoTranscript } from "@/types/types";
+import {
+  PopularScanSettings,
+  PopularVideo,
+  VideoTranscript,
+  YouTubeRegion,
+} from "@/types/types";
 
 const SORT_OPTIONS: Array<{ value: VideoSort; label: string }> = [
   { value: "score", label: "Trending Score" },
@@ -34,20 +42,16 @@ const SORT_OPTIONS: Array<{ value: VideoSort; label: string }> = [
   { value: "recent", label: "Recent" },
 ];
 const DAY_OPTIONS: VideoDays[] = [7, 30];
-const REGION_OPTIONS = [
-  { label: "All Regions", value: "" },
-  { label: "United States", value: "US" },
-  { label: "India", value: "IN" },
-  { label: "United Kingdom", value: "GB" },
-  { label: "Canada", value: "CA" },
-  { label: "Australia", value: "AU" },
-];
 const ALL_CATEGORIES = "all";
 const SOURCE_OPTIONS = [
   { label: "All Videos", value: "all" },
   { label: "Popular", value: "POPULAR" },
   { label: "Niche", value: "NICHE" },
 ];
+const DEFAULT_SCAN_SETTINGS: PopularScanSettings = {
+  region_codes: ["US"],
+  max_results: 10,
+};
 
 function VideoCardSkeleton() {
   return (
@@ -74,10 +78,14 @@ export default function YoutubePopularPage() {
   const [scanning, setScanning] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [messageType, setMessageType] = useState<"success" | "error" | "info" | null>(null);
-  const [transcriptErrors, setTranscriptErrors] = useState<Record<number, string>>({});
-  const [expandedTranscriptErrorId, setExpandedTranscriptErrorId] = useState<number | null>(null);
-  const [transcriptLoadingId, setTranscriptLoadingId] = useState<number | null>(null);
+  const [scanSettings, setScanSettings] = useState<PopularScanSettings>(DEFAULT_SCAN_SETTINGS);
+  const [availableRegions, setAvailableRegions] = useState<YouTubeRegion[]>([]);
+  const [settingsLoading, setSettingsLoading] = useState(true);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [regionSearch, setRegionSearch] = useState("");
   const [transcriptReadLoadingId, setTranscriptReadLoadingId] = useState<number | null>(null);
+  const [transcriptLoading, setTranscriptLoading] = useState(false);
+  const [transcriptSaving, setTranscriptSaving] = useState(false);
   const [draftLoadingId, setDraftLoadingId] = useState<number | null>(null);
   const [activeTranscript, setActiveTranscript] = useState<VideoTranscript | null>(null);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
@@ -98,6 +106,29 @@ export default function YoutubePopularPage() {
     }),
     [days, minViews, regionCode, sort, sourceType]
   );
+
+  const regionOptions = useMemo(
+    () => [
+      { label: "All Regions", value: "" },
+      ...availableRegions.map((region) => ({
+        label: region.name,
+        value: region.code,
+      })),
+    ],
+    [availableRegions]
+  );
+
+  const filteredAvailableRegions = useMemo(() => {
+    const search = regionSearch.trim().toLowerCase();
+    if (!search) {
+      return availableRegions;
+    }
+
+    return availableRegions.filter((region) => {
+      const haystack = `${region.name} ${region.code}`.toLowerCase();
+      return haystack.includes(search);
+    });
+  }, [availableRegions, regionSearch]);
 
   const categories = useMemo(() => {
     const counts = new Map<string, number>();
@@ -194,6 +225,31 @@ export default function YoutubePopularPage() {
   }, [filters]);
 
   useEffect(() => {
+    async function loadPopularScanConfig() {
+      try {
+        setSettingsLoading(true);
+        const [regions, settings] = await Promise.all([
+          getPopularScanRegions(),
+          getPopularScanSettings(),
+        ]);
+        setAvailableRegions(regions);
+        setScanSettings({
+          region_codes: settings.region_codes,
+          max_results: settings.max_results,
+        });
+      } catch (err) {
+        console.error("Failed to load popular scan settings", err);
+        setMessage("Failed to load popular scan settings");
+        setMessageType("error");
+      } finally {
+        setSettingsLoading(false);
+      }
+    }
+
+    void loadPopularScanConfig();
+  }, []);
+
+  useEffect(() => {
     if (selectedCategory === ALL_CATEGORIES) {
       return;
     }
@@ -210,14 +266,20 @@ export default function YoutubePopularPage() {
   async function handleScanNow() {
     try {
       setScanning(true);
-      setMessage("Scanning and refreshing popular YouTube videos...");
+      setMessage("Scanning popular YouTube videos with current settings...");
       setMessageType("info");
 
-      await scanPopularVideos();
+      const result = await scanPopularVideos(scanSettings);
       const refreshed = await getPopularVideos(filters);
       setVideos(refreshed);
+      const regionSummary =
+        result.regions.length <= 4
+          ? result.regions.join(", ")
+          : `${result.regions.slice(0, 4).join(", ")} +${result.regions.length - 4} more`;
 
-      setMessage("Popular videos scan completed.");
+      setMessage(
+        `Popular scan completed for ${regionSummary} with ${result.max_results} results per region. Processed ${result.total_processed} videos.`
+      );
       setMessageType("success");
     } catch (err) {
       console.error("Failed to scan popular videos", err);
@@ -228,49 +290,64 @@ export default function YoutubePopularPage() {
     }
   }
 
-  async function handleFetchTranscript(videoId: number) {
+  function toggleScanRegion(regionCode: string) {
+    setScanSettings((current) => {
+      const exists = current.region_codes.includes(regionCode);
+      return {
+        ...current,
+        region_codes: exists
+          ? current.region_codes.filter((code) => code !== regionCode)
+          : [...current.region_codes, regionCode],
+      };
+    });
+  }
+
+  async function handleSaveScanSettings() {
     try {
-      setTranscriptLoadingId(videoId);
-      setMessage("Fetching transcript and saving it...");
+      setSettingsSaving(true);
+      setMessage("Saving popular scan settings...");
       setMessageType("info");
 
-      const updatedVideo = await fetchVideoTranscript(videoId);
-      setVideos((current) =>
-        current.map((video) => (video.id === videoId ? updatedVideo : video))
-      );
-      setTranscriptErrors((current) => {
-        const next = { ...current };
-        delete next[videoId];
-        return next;
-      });
-      if (expandedTranscriptErrorId === videoId) {
-        setExpandedTranscriptErrorId(null);
-      }
-
-      setMessage("Transcript fetched and stored successfully.");
+      const saved = await updatePopularScanSettings(scanSettings);
+      setScanSettings(saved);
+      setMessage("Popular scan settings saved.");
       setMessageType("success");
     } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "Failed to fetch transcript";
-      console.error("Failed to fetch transcript", err);
-      setTranscriptErrors((current) => ({ ...current, [videoId]: errorMessage }));
-      setExpandedTranscriptErrorId(videoId);
-      setMessage(errorMessage);
+      console.error("Failed to save popular scan settings", err);
+      setMessage(
+        err instanceof Error ? err.message : "Failed to save popular scan settings"
+      );
       setMessageType("error");
     } finally {
-      setTranscriptLoadingId(null);
+      setSettingsSaving(false);
     }
   }
 
-  async function handleReadTranscript(videoId: number) {
+  async function handleOpenTranscript(video: PopularVideo) {
+    setActiveTranscript({
+      id: video.id,
+      title: video.title,
+      youtube_video_id: video.youtube_video_id,
+      transcript_text: "",
+      transcript_language: video.transcript_language,
+      transcript_source: video.transcript_source,
+      transcript_fetched_at: video.transcript_fetched_at,
+    });
+    setTranscriptOpen(true);
+
+    if (!video.has_transcript) {
+      setTranscriptLoading(false);
+      return;
+    }
+
     try {
-      setTranscriptReadLoadingId(videoId);
+      setTranscriptReadLoadingId(video.id);
+      setTranscriptLoading(true);
       setMessage("Loading transcript...");
       setMessageType("info");
 
-      const transcript = await getVideoTranscript(videoId);
+      const transcript = await getVideoTranscript(video.id);
       setActiveTranscript(transcript);
-      setTranscriptOpen(true);
       setMessage(null);
       setMessageType(null);
     } catch (err) {
@@ -280,7 +357,46 @@ export default function YoutubePopularPage() {
       );
       setMessageType("error");
     } finally {
+      setTranscriptLoading(false);
       setTranscriptReadLoadingId(null);
+    }
+  }
+
+  async function handleSaveTranscript(transcriptText: string) {
+    if (!activeTranscript) {
+      return;
+    }
+
+    try {
+      setTranscriptSaving(true);
+      setMessage("Saving transcript...");
+      setMessageType("info");
+
+      const updatedVideo = await saveVideoTranscript(activeTranscript.id, transcriptText);
+      setVideos((current) =>
+        current.map((video) => (video.id === updatedVideo.id ? updatedVideo : video))
+      );
+      setActiveTranscript((current) =>
+        current
+          ? {
+              ...current,
+              transcript_text: transcriptText.trim(),
+              transcript_language: updatedVideo.transcript_language,
+              transcript_source: updatedVideo.transcript_source,
+              transcript_fetched_at: updatedVideo.transcript_fetched_at,
+            }
+          : current
+      );
+      setMessage("Transcript saved.");
+      setMessageType("success");
+    } catch (err) {
+      console.error("Failed to save transcript", err);
+      setMessage(
+        err instanceof Error ? err.message : "Failed to save transcript"
+      );
+      setMessageType("error");
+    } finally {
+      setTranscriptSaving(false);
     }
   }
 
@@ -361,7 +477,7 @@ export default function YoutubePopularPage() {
               onChange={(e) => setRegionCode(e.target.value)}
               className="rounded border px-2 py-1 text-sm"
             >
-              {REGION_OPTIONS.map((option) => (
+              {regionOptions.map((option) => (
                 <option key={option.label} value={option.value}>
                   {option.label}
                 </option>
@@ -406,9 +522,133 @@ export default function YoutubePopularPage() {
 
           </div>
 
-          <Button onClick={handleScanNow} disabled={scanning}>
+          <Button
+            onClick={handleScanNow}
+            disabled={scanning || settingsLoading || scanSettings.region_codes.length === 0}
+          >
             {scanning ? "Scanning" : "Scan Now"}
           </Button>
+        </div>
+
+        <div className="mb-4 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-gray-900">Popular Scan Settings</h2>
+              <p className="mt-1 text-sm text-gray-500">
+                Choose the regions to scan and how many popular videos to fetch per
+                region.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="secondary"
+                type="button"
+                onClick={() =>
+                  setScanSettings((current) => ({
+                    ...current,
+                    region_codes: availableRegions.map((region) => region.code),
+                  }))
+                }
+                disabled={settingsLoading || availableRegions.length === 0}
+                className="px-3 py-2 text-sm"
+              >
+                Select All
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void handleSaveScanSettings()}
+                disabled={settingsLoading || settingsSaving || scanSettings.region_codes.length === 0}
+                className="px-3 py-2 text-sm"
+              >
+                {settingsSaving ? "Saving..." : "Save Settings"}
+              </Button>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
+            <div>
+              <label className="mb-2 block text-sm font-medium text-gray-700">
+                Results per region
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="50"
+                value={scanSettings.max_results}
+                onChange={(e) => {
+                  const nextValue = Number(e.target.value);
+                  setScanSettings((current) => ({
+                    ...current,
+                    max_results: Number.isFinite(nextValue)
+                      ? Math.max(1, Math.min(50, nextValue))
+                      : 1,
+                  }));
+                }}
+                className="w-full rounded border px-3 py-2 text-sm"
+              />
+              <div className="mt-2 text-xs text-gray-500">
+                YouTube allows up to 50 results per request.
+              </div>
+            </div>
+
+            <div>
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <label className="text-sm font-medium text-gray-700">
+                  Regions
+                </label>
+                <input
+                  type="text"
+                  value={regionSearch}
+                  onChange={(e) => setRegionSearch(e.target.value)}
+                  placeholder="Search regions"
+                  className="w-full rounded border px-3 py-2 text-sm sm:w-56"
+                />
+              </div>
+
+              <div className="mb-2 text-xs text-gray-500">
+                Selected {scanSettings.region_codes.length} region
+                {scanSettings.region_codes.length === 1 ? "" : "s"}
+              </div>
+
+              {settingsLoading ? (
+                <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500">
+                  Loading available regions from YouTube...
+                </div>
+              ) : (
+                <div className="grid max-h-64 gap-2 overflow-y-auto rounded-lg border border-gray-200 p-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {filteredAvailableRegions.map((region) => {
+                    const checked = scanSettings.region_codes.includes(region.code);
+
+                    return (
+                      <label
+                        key={region.code}
+                        className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 text-sm transition ${
+                          checked
+                            ? "border-blue-300 bg-blue-50 text-blue-800"
+                            : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleScanRegion(region.code)}
+                        />
+                        <span className="min-w-0">
+                          {region.name} ({region.code})
+                        </span>
+                      </label>
+                    );
+                  })}
+
+                  {filteredAvailableRegions.length === 0 ? (
+                    <div className="col-span-full rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500">
+                      No regions match your search.
+                    </div>
+                  ) : null}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
@@ -474,68 +714,16 @@ export default function YoutubePopularPage() {
                 <VideoCard
                   video={video}
                   sidebarActions={
-                    <>
-                      <Button
-                        onClick={() => handleFetchTranscript(video.id)}
-                        disabled={transcriptLoadingId === video.id}
-                        className="w-full text-sm"
-                      >
-                        {transcriptLoadingId === video.id
-                          ? "Fetching..."
-                          : video.has_transcript
-                            ? "Refresh Transcript"
-                            : "Fetch Transcript"}
-                      </Button>
-
-                      <Button
-                        variant="secondary"
-                        onClick={() => handleReadTranscript(video.id)}
-                        disabled={!video.has_transcript || transcriptReadLoadingId === video.id}
-                        className="text-sm"
-                      >
-                        {transcriptReadLoadingId === video.id
-                          ? "Opening..."
-                          : "Read Transcript"}
-                      </Button>
-                    </>
-                  }
-                  sidebarMessage={
-                    transcriptErrors[video.id] ? (
-                      <div className="mt-1">
-                        <button
-                          type="button"
-                          title={transcriptErrors[video.id]}
-                          onClick={() =>
-                            setExpandedTranscriptErrorId((current) =>
-                              current === video.id ? null : video.id
-                            )
-                          }
-                          className="flex w-full items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-left text-xs text-red-700 transition hover:bg-red-100"
-                        >
-                          <span className="text-sm leading-none">!</span>
-                          <span className="font-medium">Transcript Error</span>
-                        </button>
-                        {expandedTranscriptErrorId === video.id && (
-                          <div className="relative mt-2">
-                            <div className="absolute left-0 top-0 z-20 w-72 rounded-xl border border-red-200 bg-white px-3 py-3 text-xs text-red-700 shadow-xl">
-                              <div className="mb-2 flex items-start justify-between gap-3">
-                                <span className="font-semibold text-red-800">
-                                  Transcript Error
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => setExpandedTranscriptErrorId(null)}
-                                  className="text-xs font-medium text-red-500 transition hover:text-red-700"
-                                >
-                                  X
-                                </button>
-                              </div>
-                              <div>{transcriptErrors[video.id]}</div>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ) : undefined
+                    <Button
+                      variant="secondary"
+                      onClick={() => void handleOpenTranscript(video)}
+                      disabled={transcriptReadLoadingId === video.id}
+                      className="text-sm"
+                    >
+                      {transcriptReadLoadingId === video.id
+                        ? "Opening..."
+                        : "Transcript"}
+                    </Button>
                   }
                 />
               </div>
@@ -546,13 +734,20 @@ export default function YoutubePopularPage() {
         <TranscriptModal
           open={transcriptOpen}
           transcript={activeTranscript}
+          loadingTranscript={transcriptLoading}
+          savingTranscript={transcriptSaving}
           creatingDraft={draftLoadingId === activeTranscript?.id}
+          onSaveTranscript={(transcriptText) => {
+            void handleSaveTranscript(transcriptText);
+          }}
           onCreateDraft={() => {
             if (activeTranscript) {
               void handleGenerateDraft(activeTranscript.id);
             }
           }}
           onClose={() => {
+            setTranscriptLoading(false);
+            setTranscriptSaving(false);
             setTranscriptOpen(false);
             setActiveTranscript(null);
           }}

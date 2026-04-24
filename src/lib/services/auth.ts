@@ -41,13 +41,8 @@ export async function verifyOtp(payload: VerifyOtpRequest): Promise<VerifyOtpRes
 }
 
 export async function logout(): Promise<{ status: boolean; message: string }> {
-  const res = await fetch(`${process.env.NEXT_PUBLIC_API_BASE_URL}/auth/logout`, {
+  return apiFetch<{ status: boolean; message: string }>("/auth/logout", {
     method: "POST",
-    credentials: "include", // ✅ send cookies
+    credentials: "include",
   });
-
-  if (!res.ok) {
-    throw new Error("Logout failed");
-  }
-  return res.json();
 }

@@ -1,5 +1,12 @@
 import { apiFetch } from "@/lib/api";
-import { Article, PopularVideo, VideoTranscript } from "@/types/types";
+import {
+  Article,
+  PopularScanRunResponse,
+  PopularScanSettings,
+  PopularVideo,
+  VideoTranscript,
+  YouTubeRegion,
+} from "@/types/types";
 import { VideoDays, VideoSort } from "@/lib/services/scaned-trends";
 
 export type PopularVideoFilters = {
@@ -27,17 +34,45 @@ export async function getPopularVideos(
   ) as Promise<PopularVideo[]>;
 }
 
-export async function scanPopularVideos(): Promise<{ status: string }> {
-  return apiFetch("/admin/youtube-scan/popular/scan", {
-    method: "POST",
-  }) as Promise<{ status: string }>;
+export async function getPopularScanRegions(): Promise<YouTubeRegion[]> {
+  return apiFetch("/admin/youtube-scan/popular/regions", {
+    method: "GET",
+  }) as Promise<YouTubeRegion[]>;
 }
 
-export async function fetchVideoTranscript(
-  videoId: number
+export async function getPopularScanSettings(): Promise<PopularScanSettings> {
+  return apiFetch("/admin/youtube-scan/popular/settings", {
+    method: "GET",
+  }) as Promise<PopularScanSettings>;
+}
+
+export async function updatePopularScanSettings(
+  settings: PopularScanSettings
+): Promise<PopularScanSettings> {
+  return apiFetch("/admin/youtube-scan/popular/settings", {
+    method: "PUT",
+    body: JSON.stringify(settings),
+  }) as Promise<PopularScanSettings>;
+}
+
+export async function scanPopularVideos(
+  settings?: PopularScanSettings
+): Promise<PopularScanRunResponse> {
+  return apiFetch("/admin/youtube-scan/popular/scan", {
+    method: "POST",
+    body: settings ? JSON.stringify(settings) : undefined,
+  }) as Promise<PopularScanRunResponse>;
+}
+
+export async function saveVideoTranscript(
+  videoId: number,
+  transcriptText: string
 ): Promise<PopularVideo> {
   return apiFetch(`/admin/youtube-scan/videos/${videoId}/transcript`, {
     method: "POST",
+    body: JSON.stringify({
+      transcript_text: transcriptText,
+    }),
   }) as Promise<PopularVideo>;
 }
 
