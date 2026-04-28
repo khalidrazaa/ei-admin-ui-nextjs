@@ -84,19 +84,11 @@ export default function TranscriptModal({
       <div className="relative flex max-h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
         <div className="border-b border-gray-200 px-6 py-4">
           <h2 className="text-lg font-semibold text-gray-900">{transcript.title}</h2>
-          <p className="mt-1 text-sm text-gray-500">
-            {transcript.transcript_language
-              ? `Transcript ${transcript.transcript_language}`
-              : "Transcript"}
-            {transcript.transcript_source ? ` | ${transcript.transcript_source}` : ""}
-          </p>
+
         </div>
 
         <div className="overflow-y-auto px-6 py-5">
-          <div className="mb-3 text-sm text-gray-500">
-            Paste the transcript below. Rich text paste is supported and will be saved as
-            transcript text.
-          </div>
+
 
           {loadingTranscript ? (
             <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500">
