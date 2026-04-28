@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import ProtectedPageShell from "@/components/layout/ProtectedPageShell";
 import { getKeywords, scrapeTrends, getTrendsData } from "@/lib/services/keyword";
 import { Trend } from "@/types/types";
 
@@ -69,8 +70,28 @@ export default function TrendsPage() {
 
   
   return (
-    <div>
-      <div className="p-2">
+    <ProtectedPageShell
+      title="Trends"
+      description="Collect and review search trends before they move downstream."
+      sidebar={
+        <div className="space-y-3">
+          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+            <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
+              Trend Rows
+            </div>
+            <div className="mt-2 text-2xl font-semibold text-gray-900">
+              {trendsList.length}
+            </div>
+          </div>
+          <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">
+            Scrape fresh trend data or explore related keyword ideas from the search
+            panel.
+          </div>
+        </div>
+      }
+      contentClassName="flex-1 overflow-y-auto p-2"
+    >
+      <>
         {/* Top row with two sections */}
         <div className="flex justify-between gap-6 mb-6">
           {/* Scrape Trends Section */}
@@ -146,50 +167,65 @@ export default function TrendsPage() {
             )}
           </div>
         </div>
-      </div>
-          <div>
-      <h2 className="text-lg font-semibold mb-2">Trends Data</h2>
-      <table className="min-w-full border-collapse border border-gray-300">
-        <thead>
-          <tr>
-            <th className="border border-gray-300 px-4 py-2">Trend</th>
-            <th className="border border-gray-300 px-4 py-2">Category</th>
-            <th className="border border-gray-300 px-4 py-2">Subcategory</th>
-            <th className="border border-gray-300 px-4 py-2">Search Volume</th>
-            <th className="border border-gray-300 px-4 py-2">Is Growing</th>
-            <th className="border border-gray-300 px-4 py-2">Status</th>
-            <th className="border border-gray-300 px-4 py-2">Started</th>
-            <th className="border border-gray-300 px-4 py-2">Ended</th>
-            <th className="border border-gray-300 px-4 py-2">Last Updated</th>
-            <th className="border border-gray-300 px-4 py-2">Explore Link</th>
-          </tr>
-        </thead>
-        <tbody>
-          {trendsList.length === 0 ? (
-            <tr>
-              <td colSpan={10} className="text-center p-4">
-                No trends found
-              </td>
-            </tr>
-          ) : (
-            trendsList.map((item) => (
-              <tr key={item._id} className="hover:bg-gray-100">
-                <td className="border border-gray-300 px-4 py-2">{item.trend}</td>
-                <td className="border border-gray-300 px-4 py-2">{item.category ?? "-"}</td>
-                <td className="border border-gray-300 px-4 py-2">{item.subcategory ?? "-"}</td>
-                <td className="border border-gray-300 px-4 py-2">{item.search_volume?.toLocaleString?.() ?? "-"}</td>
-                <td className="border border-gray-300 px-4 py-2">{item.is_growing ? "Yes" : "No"}</td>
-                <td className="border border-gray-300 px-4 py-2">{item.status}</td>
-                <td className="border border-gray-300 px-4 py-2">{item.started ? new Date(item.started).toLocaleString() : "-"}</td>
-                <td className="border border-gray-300 px-4 py-2">{item.ended ? new Date(item.ended).toLocaleString() : "-"}</td>
-                <td className="border border-gray-300 px-4 py-2">{item.last_updated ? new Date(item.last_updated).toLocaleString() : "-"}</td>
+        <div>
+          <h2 className="text-lg font-semibold mb-2">Trends Data</h2>
+          <table className="min-w-full border-collapse border border-gray-300">
+            <thead>
+              <tr>
+                <th className="border border-gray-300 px-4 py-2">Trend</th>
+                <th className="border border-gray-300 px-4 py-2">Category</th>
+                <th className="border border-gray-300 px-4 py-2">Subcategory</th>
+                <th className="border border-gray-300 px-4 py-2">Search Volume</th>
+                <th className="border border-gray-300 px-4 py-2">Is Growing</th>
+                <th className="border border-gray-300 px-4 py-2">Status</th>
+                <th className="border border-gray-300 px-4 py-2">Started</th>
+                <th className="border border-gray-300 px-4 py-2">Ended</th>
+                <th className="border border-gray-300 px-4 py-2">Last Updated</th>
+                <th className="border border-gray-300 px-4 py-2">Explore Link</th>
               </tr>
-            ))
-          )}
-        </tbody>
-        </table>
-    </div>
-  </div>
-          
+            </thead>
+            <tbody>
+              {trendsList.length === 0 ? (
+                <tr>
+                  <td colSpan={10} className="text-center p-4">
+                    No trends found
+                  </td>
+                </tr>
+              ) : (
+                trendsList.map((item) => (
+                  <tr key={item._id} className="hover:bg-gray-100">
+                    <td className="border border-gray-300 px-4 py-2">{item.trend}</td>
+                    <td className="border border-gray-300 px-4 py-2">
+                      {item.category ?? "-"}
+                    </td>
+                    <td className="border border-gray-300 px-4 py-2">
+                      {item.subcategory ?? "-"}
+                    </td>
+                    <td className="border border-gray-300 px-4 py-2">
+                      {item.search_volume?.toLocaleString?.() ?? "-"}
+                    </td>
+                    <td className="border border-gray-300 px-4 py-2">
+                      {item.is_growing ? "Yes" : "No"}
+                    </td>
+                    <td className="border border-gray-300 px-4 py-2">{item.status}</td>
+                    <td className="border border-gray-300 px-4 py-2">
+                      {item.started ? new Date(item.started).toLocaleString() : "-"}
+                    </td>
+                    <td className="border border-gray-300 px-4 py-2">
+                      {item.ended ? new Date(item.ended).toLocaleString() : "-"}
+                    </td>
+                    <td className="border border-gray-300 px-4 py-2">
+                      {item.last_updated
+                        ? new Date(item.last_updated).toLocaleString()
+                        : "-"}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </>
+    </ProtectedPageShell>
   );  
 } 

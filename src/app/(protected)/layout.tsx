@@ -16,6 +16,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     { name: "Trends", href: "/trends" },
     { name: "Niches", href: "/niches" },
     { name: "Youtube Popular", href: "/youtube-popular" },
+    { name: "Draft", href: "/draft" },
     { name: "Articles", href: "/articles" }
   ];
 

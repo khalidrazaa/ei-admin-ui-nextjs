@@ -56,6 +56,14 @@ export interface VideoTranscript {
   transcript_fetched_at: string | null;
 }
 
+export type DraftProvider = "gemini" | "chatgpt";
+
+export interface DraftArticleRequest {
+  provider: DraftProvider;
+  prompt?: string;
+  additional_context?: string;
+}
+
 export interface YouTubeRegion {
   code: string;
   name: string;

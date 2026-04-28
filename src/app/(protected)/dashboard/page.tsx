@@ -1,12 +1,23 @@
 "use client";
 
 //import { useState } from "react";
+import ProtectedPageShell from "@/components/layout/ProtectedPageShell";
 
 export default function DashboardPage() {
   //const [loading, setLoading] = useState(false);
 
   return (
-    <div className="p-8">
+    <ProtectedPageShell
+      title="Dashboard"
+      description="Overview of publishing activity and pipeline health."
+      sidebar={
+        <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">
+          Use the main sections to scan trends, manage niches, review popular videos,
+          and curate generated articles.
+        </div>
+      }
+      contentClassName="flex-1 overflow-y-auto p-8"
+    >
       {/* Header */}
       <header className="flex justify-between items-center mb-8">
         <h1 className="text-2xl font-bold">Admin Dashboard</h1>
@@ -44,6 +55,6 @@ export default function DashboardPage() {
           Reads by Article (placeholder)
         </div>
       </section>
-    </div>
+    </ProtectedPageShell>
   );
 }

@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
+import ProtectedPageShell from "@/components/layout/ProtectedPageShell";
 import { getArticles } from "@/lib/services/articles";
 import { Article } from "@/types/types";
 
@@ -9,6 +10,21 @@ export default function ArticlesPage() {
   const [articles, setArticles] = useState<Article[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const articleSummary = useMemo(() => {
+    const drafts = articles.filter((article) => article.status === "draft").length;
+    const published = articles.filter((article) => article.status === "published").length;
+    const categories = new Set(
+      articles.map((article) => article.category).filter(Boolean)
+    ).size;
+
+    return {
+      total: articles.length,
+      drafts,
+      published,
+      categories,
+    };
+  }, [articles]);
 
   useEffect(() => {
     async function loadArticles() {
@@ -28,14 +44,47 @@ export default function ArticlesPage() {
   }, []);
 
   return (
-    <div className="p-6">
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-gray-900">Articles</h1>
-        <p className="mt-1 text-sm text-gray-500">
-          Drafts generated from video transcripts will show up here.
-        </p>
-      </div>
-
+    <ProtectedPageShell
+      title="Articles"
+      description="Drafts generated from video transcripts will show up here."
+      sidebar={
+        <div className="space-y-3">
+          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+            <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
+              Total Articles
+            </div>
+            <div className="mt-2 text-2xl font-semibold text-gray-900">
+              {loading ? "..." : articleSummary.total}
+            </div>
+          </div>
+          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+            <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
+              Drafts
+            </div>
+            <div className="mt-2 text-2xl font-semibold text-gray-900">
+              {loading ? "..." : articleSummary.drafts}
+            </div>
+          </div>
+          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+            <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
+              Published
+            </div>
+            <div className="mt-2 text-2xl font-semibold text-gray-900">
+              {loading ? "..." : articleSummary.published}
+            </div>
+          </div>
+          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+            <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
+              Categories
+            </div>
+            <div className="mt-2 text-2xl font-semibold text-gray-900">
+              {loading ? "..." : articleSummary.categories}
+            </div>
+          </div>
+        </div>
+      }
+      contentClassName="flex-1 overflow-y-auto p-6"
+    >
       {loading ? (
         <div className="rounded-xl border border-gray-200 bg-white p-6 text-sm text-gray-500 shadow-sm">
           Loading articles...
@@ -81,6 +130,6 @@ export default function ArticlesPage() {
           </table>
         </div>
       )}
-    </div>
+    </ProtectedPageShell>
   );
 }
