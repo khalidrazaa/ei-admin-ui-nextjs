@@ -92,15 +92,26 @@ export default function SettingsPage() {
     async function loadPopularScanConfig() {
       try {
         setSettingsLoading(true);
-        const [regions, settings] = await Promise.all([
-          getPopularScanRegions(),
-          getPopularScanSettings(),
-        ]);
-        setAvailableRegions(regions);
+        const settings = await getPopularScanSettings();
         setScanSettings({
           region_codes: settings.region_codes,
           max_results: settings.max_results,
         });
+
+        try {
+          const regions = await getPopularScanRegions();
+          setAvailableRegions(regions);
+        } catch (err) {
+          console.error("Failed to load YouTube regions", err);
+          setAvailableRegions(
+            settings.region_codes.map((code) => ({
+              code,
+              name: code,
+            }))
+          );
+          setMessage("Loaded saved settings, but failed to load YouTube regions");
+          setMessageType("error");
+        }
       } catch (err) {
         console.error("Failed to load popular scan settings", err);
         setMessage("Failed to load popular scan settings");

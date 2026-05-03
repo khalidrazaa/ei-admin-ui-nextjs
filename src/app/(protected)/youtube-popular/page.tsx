@@ -9,7 +9,6 @@ import TranscriptModal from "@/components/ui/TranscriptModal";
 import VideoCard from "@/components/ui/VideoCard";
 import {
   generateDraftArticle,
-  getPopularScanRegions,
   getPopularScanSettings,
   getVideoTranscript,
   getPopularVideos,
@@ -25,7 +24,6 @@ import {
   PopularScanSettings,
   PopularVideo,
   VideoTranscript,
-  YouTubeRegion,
 } from "@/types/types";
 
 const SORT_OPTIONS: Array<{ value: VideoSort; label: string }> = [
@@ -79,7 +77,6 @@ export default function YoutubePopularPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [messageType, setMessageType] = useState<"success" | "error" | "info" | null>(null);
   const [scanSettings, setScanSettings] = useState<PopularScanSettings>(DEFAULT_SCAN_SETTINGS);
-  const [availableRegions, setAvailableRegions] = useState<YouTubeRegion[]>([]);
   const [settingsLoading, setSettingsLoading] = useState(true);
   const [transcriptReadLoadingId, setTranscriptReadLoadingId] = useState<number | null>(null);
   const [transcriptLoading, setTranscriptLoading] = useState(false);
@@ -106,14 +103,32 @@ export default function YoutubePopularPage() {
   );
 
   const regionOptions = useMemo(
-    () => [
-      { label: "All Regions", value: "" },
-      ...availableRegions.map((region) => ({
-        label: region.name,
-        value: region.code,
-      })),
-    ],
-    [availableRegions]
+    () => {
+      const codes = new Set<string>();
+
+      scanSettings.region_codes.forEach((code) => {
+        if (code) {
+          codes.add(code);
+        }
+      });
+
+      videos.forEach((video) => {
+        if (video.region_code) {
+          codes.add(video.region_code);
+        }
+      });
+
+      return [
+        { label: "All Regions", value: "" },
+        ...Array.from(codes)
+          .sort()
+          .map((code) => ({
+            label: code,
+            value: code,
+          })),
+      ];
+    },
+    [scanSettings.region_codes, videos]
   );
 
   const categories = useMemo(() => {
@@ -214,11 +229,7 @@ export default function YoutubePopularPage() {
     async function loadPopularScanConfig() {
       try {
         setSettingsLoading(true);
-        const [regions, settings] = await Promise.all([
-          getPopularScanRegions(),
-          getPopularScanSettings(),
-        ]);
-        setAvailableRegions(regions);
+        const settings = await getPopularScanSettings();
         setScanSettings({
           region_codes: settings.region_codes,
           max_results: settings.max_results,
