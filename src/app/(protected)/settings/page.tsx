@@ -10,9 +10,16 @@ import {
   getPopularScanSettings,
   updatePopularScanSettings,
 } from "@/lib/services/popular-videos";
-import { PopularScanSettings, YouTubeRegion } from "@/types/types";
+import {
+  createDraftPrompt,
+  deleteDraftPrompt,
+  getDraftPrompts,
+  updateDraftPrompt,
+} from "@/lib/services/draft-prompts";
+import { DraftPrompt, PopularScanSettings, YouTubeRegion } from "@/types/types";
 
 import PopularSettingsPanel from "./components/PopularSettingsPanel";
+import PromptSettingsPanel from "./components/PromptSettingsPanel";
 
 const DEFAULT_SCAN_SETTINGS: PopularScanSettings = {
   region_codes: ["US"],
@@ -21,6 +28,7 @@ const DEFAULT_SCAN_SETTINGS: PopularScanSettings = {
 
 const SETTINGS_TABS = [
   { key: "youtube-popular", label: "Youtube Popular" },
+  { key: "prompts", label: "Prompts" },
 ] as const;
 
 type SettingsTab = (typeof SETTINGS_TABS)[number]["key"];
@@ -46,6 +54,14 @@ export default function SettingsPage() {
   const [settingsLoading, setSettingsLoading] = useState(true);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [regionSearch, setRegionSearch] = useState("");
+  const [prompts, setPrompts] = useState<DraftPrompt[]>([]);
+  const [promptsLoading, setPromptsLoading] = useState(true);
+  const [promptSaving, setPromptSaving] = useState(false);
+  const [promptDeleting, setPromptDeleting] = useState(false);
+  const [selectedPromptId, setSelectedPromptId] = useState<number | null>(null);
+  const [promptName, setPromptName] = useState("");
+  const [promptText, setPromptText] = useState("");
+  const [promptActive, setPromptActive] = useState(true);
 
   const filteredAvailableRegions = useMemo(() => {
     const search = regionSearch.trim().toLowerCase();
@@ -97,6 +113,24 @@ export default function SettingsPage() {
     void loadPopularScanConfig();
   }, []);
 
+  useEffect(() => {
+    async function loadPrompts() {
+      try {
+        setPromptsLoading(true);
+        const data = await getDraftPrompts();
+        setPrompts(data);
+      } catch (err) {
+        console.error("Failed to load prompts", err);
+        setMessage("Failed to load prompts");
+        setMessageType("error");
+      } finally {
+        setPromptsLoading(false);
+      }
+    }
+
+    void loadPrompts();
+  }, []);
+
   function toggleScanRegion(regionCode: string) {
     setScanSettings((current) => {
       const exists = current.region_codes.includes(regionCode);
@@ -127,6 +161,89 @@ export default function SettingsPage() {
       setMessageType("error");
     } finally {
       setSettingsSaving(false);
+    }
+  }
+
+  function resetPromptForm() {
+    setSelectedPromptId(null);
+    setPromptName("");
+    setPromptText("");
+    setPromptActive(true);
+  }
+
+  function selectPrompt(prompt: DraftPrompt) {
+    setSelectedPromptId(prompt.id);
+    setPromptName(prompt.name);
+    setPromptText(prompt.prompt);
+    setPromptActive(prompt.is_active);
+  }
+
+  async function handleSavePrompt() {
+    const name = promptName.trim();
+    const prompt = promptText.trim();
+
+    if (!name || !prompt) {
+      setMessage("Prompt name and prompt are required.");
+      setMessageType("error");
+      return;
+    }
+
+    try {
+      setPromptSaving(true);
+      setMessage("Saving prompt...");
+      setMessageType("info");
+
+      const saved = selectedPromptId
+        ? await updateDraftPrompt(selectedPromptId, {
+            name,
+            prompt,
+            is_active: promptActive,
+          })
+        : await createDraftPrompt({
+            name,
+            prompt,
+            is_active: promptActive,
+          });
+
+      setPrompts((current) => {
+        const exists = current.some((item) => item.id === saved.id);
+        if (exists) {
+          return current.map((item) => (item.id === saved.id ? saved : item));
+        }
+        return [saved, ...current];
+      });
+      selectPrompt(saved);
+      setMessage("Prompt saved.");
+      setMessageType("success");
+    } catch (err) {
+      console.error("Failed to save prompt", err);
+      setMessage(err instanceof Error ? err.message : "Failed to save prompt");
+      setMessageType("error");
+    } finally {
+      setPromptSaving(false);
+    }
+  }
+
+  async function handleDeletePrompt() {
+    if (!selectedPromptId) {
+      return;
+    }
+
+    try {
+      setPromptDeleting(true);
+      setMessage("Deleting prompt...");
+      setMessageType("info");
+      await deleteDraftPrompt(selectedPromptId);
+      setPrompts((current) => current.filter((prompt) => prompt.id !== selectedPromptId));
+      resetPromptForm();
+      setMessage("Prompt deleted.");
+      setMessageType("success");
+    } catch (err) {
+      console.error("Failed to delete prompt", err);
+      setMessage(err instanceof Error ? err.message : "Failed to delete prompt");
+      setMessageType("error");
+    } finally {
+      setPromptDeleting(false);
     }
   }
 
@@ -174,11 +291,15 @@ export default function SettingsPage() {
           <h2 className="text-2xl font-semibold text-gray-900">
             {activeTab === "youtube-popular"
               ? "Youtube Popular Scan Settings"
+              : activeTab === "prompts"
+                ? "Draft Prompts"
               : "Settings"}
           </h2>
           <p className="mt-1 text-sm text-gray-500">
             {activeTab === "youtube-popular"
               ? "Choose scan regions and fetch limits for YouTube popular videos."
+              : activeTab === "prompts"
+                ? "Write reusable draft prompts for transcript article generation."
               : "Manage shared app settings."}
           </p>
         </div>
@@ -209,6 +330,26 @@ export default function SettingsPage() {
             }
             onSave={() => void handleSaveScanSettings()}
             className="flex-1"
+          />
+        ) : null}
+
+        {activeTab === "prompts" ? (
+          <PromptSettingsPanel
+            prompts={prompts}
+            selectedPromptId={selectedPromptId}
+            promptName={promptName}
+            promptText={promptText}
+            promptActive={promptActive}
+            loading={promptsLoading}
+            saving={promptSaving}
+            deleting={promptDeleting}
+            onSelectPrompt={selectPrompt}
+            onNewPrompt={resetPromptForm}
+            onNameChange={setPromptName}
+            onPromptChange={setPromptText}
+            onActiveChange={setPromptActive}
+            onSave={() => void handleSavePrompt()}
+            onDelete={() => void handleDeletePrompt()}
           />
         ) : null}
 

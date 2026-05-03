@@ -1,17 +1,20 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import ProtectedPageShell from "@/components/layout/ProtectedPageShell";
 import Toast from "@/components/ui/Toast";
 import {
+  createManualTranscript,
   generateDraftFromTranscript,
   getDraftTranscript,
   getTranscriptVideos,
 } from "@/lib/services/drafts";
+import { getDraftPrompts } from "@/lib/services/draft-prompts";
 import { formatCompactNumber, formatFixedNumber } from "@/lib/utils/formatters";
 import {
   Article,
+  DraftPrompt,
   DraftProvider,
   PopularVideo,
   VideoTranscript,
@@ -22,15 +25,52 @@ const PROVIDER_OPTIONS: Array<{ value: DraftProvider; label: string }> = [
   { value: "chatgpt", label: "ChatGPT" },
 ];
 
+type TranscriptMode = "existing" | "manual";
+
+const DEFAULT_ADDITIONAL_INPUT = `Return a complete Article JSON object with article content and metadata.
+
+Required article fields:
+- title: strong article headline
+- seo_title: search-optimized title
+- content: full article in markdown
+- excerpt: short article summary
+- meta_description: SEO meta description under 160 characters
+- category: main category
+- subcategory: optional subcategory
+- tags: array of short tag strings
+- keywords: array of SEO keyword strings
+- host_site: use explainit.tech unless another host is clearly requested
+- status: draft
+- language: ISO language code, usually en
+- canonical_url: source URL or clean article URL candidate
+- schema_type: usually Article
+- open_graph_title: social title
+- open_graph_description: social summary under 200 characters
+- open_graph_image: image URL if available, otherwise null
+- featured_image_url: image URL if available, otherwise null
+- image_alt_text: descriptive alt text for the image
+- is_featured: boolean
+
+Do not invent unsupported facts. If a metadata value is unknown, use null or a sensible default.`;
+
 export default function DraftPage() {
   const [videos, setVideos] = useState<PopularVideo[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedVideoId, setSelectedVideoId] = useState<number | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [mode, setMode] = useState<TranscriptMode>("existing");
   const [transcript, setTranscript] = useState<VideoTranscript | null>(null);
   const [transcriptLoading, setTranscriptLoading] = useState(false);
+  const [manualTitle, setManualTitle] = useState("");
+  const [manualCategory, setManualCategory] = useState("");
+  const [manualTranscript, setManualTranscript] = useState("");
+  const [savingManualTranscript, setSavingManualTranscript] = useState(false);
+  const [savedPrompts, setSavedPrompts] = useState<DraftPrompt[]>([]);
+  const [selectedPromptId, setSelectedPromptId] = useState<number | "custom">("custom");
+  const [promptsLoading, setPromptsLoading] = useState(true);
   const [provider, setProvider] = useState<DraftProvider>("gemini");
   const [prompt, setPrompt] = useState("");
-  const [additionalContext, setAdditionalContext] = useState("");
+  const [additionalContext, setAdditionalContext] = useState(DEFAULT_ADDITIONAL_INPUT);
   const [generating, setGenerating] = useState(false);
   const [latestArticle, setLatestArticle] = useState<Article | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -43,27 +83,88 @@ export default function DraftPage() {
     [selectedVideoId, videos]
   );
 
-  useEffect(() => {
-    async function loadTranscriptVideos() {
-      try {
-        setLoading(true);
-        const data = await getTranscriptVideos();
-        setVideos(data);
-        setSelectedVideoId((current) => current ?? data[0]?.id ?? null);
-      } catch (err) {
-        console.error("Failed to load transcript videos", err);
-        setMessage("Failed to load transcript videos");
-        setMessageType("error");
-      } finally {
-        setLoading(false);
-      }
+  const groupedVideos = useMemo(() => {
+    const groups = new Map<string, PopularVideo[]>();
+
+    videos.forEach((video) => {
+      const category = video.category_title || "Uncategorized";
+      groups.set(category, [...(groups.get(category) ?? []), video]);
+    });
+
+    return Array.from(groups.entries()).sort(([categoryA], [categoryB]) =>
+      categoryA.localeCompare(categoryB)
+    );
+  }, [videos]);
+
+  const selectedCategoryVideos = useMemo(() => {
+    if (!selectedCategory) {
+      return [];
     }
 
-    void loadTranscriptVideos();
+    return videos.filter(
+      (video) => (video.category_title || "Uncategorized") === selectedCategory
+    );
+  }, [selectedCategory, videos]);
+
+  const loadTranscriptVideos = useCallback(async (preferredVideoId?: number) => {
+    try {
+      setLoading(true);
+      const data = await getTranscriptVideos();
+      setVideos(data);
+      const nextVideo =
+        data.find((video) => video.id === preferredVideoId) ?? data[0] ?? null;
+
+      if (nextVideo) {
+        setSelectedCategory(nextVideo.category_title || "Uncategorized");
+      }
+
+      setSelectedVideoId((current) => {
+        if (preferredVideoId) {
+          return preferredVideoId;
+        }
+        return current ?? data[0]?.id ?? null;
+      });
+    } catch (err) {
+      console.error("Failed to load transcript videos", err);
+      setMessage("Failed to load transcript videos");
+      setMessageType("error");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
-    if (!selectedVideoId) {
+    void loadTranscriptVideos();
+  }, [loadTranscriptVideos]);
+
+  useEffect(() => {
+    async function loadPrompts() {
+      try {
+        setPromptsLoading(true);
+        const data = await getDraftPrompts(true);
+        setSavedPrompts(data);
+      } catch (err) {
+        console.error("Failed to load draft prompts", err);
+        setMessage("Failed to load draft prompts");
+        setMessageType("error");
+      } finally {
+        setPromptsLoading(false);
+      }
+    }
+
+    void loadPrompts();
+  }, []);
+
+  useEffect(() => {
+    if (!selectedVideo) {
+      return;
+    }
+
+    setSelectedCategory(selectedVideo.category_title || "Uncategorized");
+  }, [selectedVideo]);
+
+  useEffect(() => {
+    if (mode !== "existing" || !selectedVideoId) {
       setTranscript(null);
       return;
     }
@@ -85,7 +186,7 @@ export default function DraftPage() {
     }
 
     void loadTranscript();
-  }, [selectedVideoId]);
+  }, [mode, selectedVideoId]);
 
   useEffect(() => {
     if (!message || messageType === null) {
@@ -101,7 +202,7 @@ export default function DraftPage() {
   }, [message, messageType]);
 
   async function handleGenerateDraft() {
-    if (!selectedVideoId) {
+    if (mode !== "existing" || !selectedVideoId) {
       return;
     }
 
@@ -128,71 +229,247 @@ export default function DraftPage() {
     }
   }
 
+  async function handleCreateManualTranscript() {
+    const title = manualTitle.trim();
+    const category = manualCategory.trim();
+    const transcriptText = manualTranscript.trim();
+
+    if (!title || !category || !transcriptText) {
+      setMessage("Title, category, and transcript are required.");
+      setMessageType("error");
+      return;
+    }
+
+    try {
+      setSavingManualTranscript(true);
+      setMessage("Saving manual transcript...");
+      setMessageType("info");
+
+      const video = await createManualTranscript({
+        title,
+        category_title: category,
+        transcript_text: transcriptText,
+      });
+
+      setManualTitle("");
+      setManualCategory("");
+      setManualTranscript("");
+      setMode("existing");
+      setSelectedVideoId(video.id);
+      await loadTranscriptVideos(video.id);
+      setMessage("Manual transcript saved.");
+      setMessageType("success");
+    } catch (err) {
+      console.error("Failed to save manual transcript", err);
+      setMessage(err instanceof Error ? err.message : "Failed to save transcript");
+      setMessageType("error");
+    } finally {
+      setSavingManualTranscript(false);
+    }
+  }
+
   return (
     <ProtectedPageShell
       title="Draft"
       description="Review transcripts and turn them into article drafts."
       sidebar={
-        loading ? (
-          <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500">
-            Loading transcripts...
-          </div>
-        ) : videos.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500">
-            No saved transcripts found yet.
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {videos.map((video) => {
-              const isActive = selectedVideoId === video.id;
+        <div className="space-y-4">
+          <button
+            onClick={() => {
+              setMode("manual");
+              setSelectedVideoId(null);
+              setTranscript(null);
+              setManualCategory(selectedCategory ?? "");
+            }}
+            className={`w-full rounded-lg border px-3 py-2 text-sm font-medium transition ${
+              mode === "manual"
+                ? "border-blue-500 bg-blue-50 text-blue-700"
+                : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+            }`}
+          >
+            New Transcript
+          </button>
 
-              return (
+          {loading ? (
+            <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500">
+              Loading transcripts...
+            </div>
+          ) : videos.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500">
+              No saved transcripts found yet.
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {groupedVideos.map(([category, categoryVideos]) => (
                 <button
-                  key={video.id}
-                  onClick={() => setSelectedVideoId(video.id)}
-                  className={`w-full rounded-xl border p-3 text-left transition ${
-                    isActive
-                      ? "border-blue-400 bg-blue-50"
-                      : "border-gray-200 bg-white hover:bg-gray-50"
+                  key={category}
+                  onClick={() => {
+                    setMode("existing");
+                    setSelectedCategory(category);
+                    setSelectedVideoId(categoryVideos[0]?.id ?? null);
+                  }}
+                  className={`flex w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left text-sm transition ${
+                    mode === "existing" && selectedCategory === category
+                      ? "border-blue-400 bg-blue-50 text-blue-700"
+                      : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
                   }`}
                 >
-                  <div className="line-clamp-2 text-sm font-medium text-gray-900">
-                    {video.title}
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-500">
-                    <span className="rounded-full bg-gray-100 px-2 py-0.5">
-                      {video.trend_stage || "watchlist"}
-                    </span>
-                    <span>Score {formatFixedNumber(video.virality_score, 1)}</span>
-                    <span>{video.category_title || "Uncategorized"}</span>
-                  </div>
+                  <span className="truncate font-medium">{category}</span>
+                  <span className="shrink-0 text-xs text-gray-400">
+                    {categoryVideos.length}
+                  </span>
                 </button>
-              );
-            })}
-          </div>
-        )
+              ))}
+            </div>
+          )}
+        </div>
       }
       contentClassName="flex-1 overflow-y-auto p-4"
     >
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(340px,0.85fr)]">
+      <div className="grid gap-4 xl:grid-cols-[300px_minmax(0,1fr)]">
         <div className="flex min-h-[calc(100vh-120px)] flex-col rounded-xl border border-gray-200 bg-white shadow-sm">
+          <div className="border-b border-gray-200 px-4 py-3">
+            <h2 className="text-sm font-semibold text-gray-900">
+              {mode === "manual"
+                ? "New Transcript"
+                : selectedCategory || "Select a category"}
+            </h2>
+            <p className="mt-1 text-xs text-gray-500">
+              {mode === "manual"
+                ? "Fill the form on the right"
+                : `${selectedCategoryVideos.length} transcript${
+                    selectedCategoryVideos.length === 1 ? "" : "s"
+                  }`}
+            </p>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto p-3">
+            {mode === "manual" ? (
+              <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500">
+                Create and save a manual transcript from the main panel.
+              </div>
+            ) : loading ? (
+              <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500">
+                Loading transcripts...
+              </div>
+            ) : selectedCategoryVideos.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500">
+                No transcripts in this category.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {selectedCategoryVideos.map((video) => {
+                  const isActive = selectedVideoId === video.id;
+
+                  return (
+                    <button
+                      key={video.id}
+                      onClick={() => {
+                        setMode("existing");
+                        setSelectedVideoId(video.id);
+                      }}
+                      className={`w-full rounded-xl border p-3 text-left transition ${
+                        isActive
+                          ? "border-blue-400 bg-blue-50"
+                          : "border-gray-200 bg-white hover:bg-gray-50"
+                      }`}
+                    >
+                      <div className="line-clamp-2 text-sm font-medium text-gray-900">
+                        {video.title}
+                      </div>
+                      <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-500">
+                        <span className="rounded-full bg-gray-100 px-2 py-0.5">
+                          {video.source === "MANUAL"
+                            ? "manual"
+                            : video.trend_stage || "watchlist"}
+                        </span>
+                        {video.source !== "MANUAL" ? (
+                          <span>Score {formatFixedNumber(video.virality_score, 1)}</span>
+                        ) : null}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex min-h-[calc(100vh-120px)] min-w-0 flex-col gap-4">
+          <div className="flex min-h-[560px] flex-col rounded-xl border border-gray-200 bg-white shadow-sm">
           <div className="border-b border-gray-200 px-5 py-4">
             <h2 className="text-lg font-semibold text-gray-900">
-              {selectedVideo?.title || "Select a transcript"}
+              {mode === "manual"
+                ? "New Transcript"
+                : selectedVideo?.title || "Select a transcript"}
             </h2>
-            {selectedVideo ? (
+            {mode === "existing" && selectedVideo ? (
               <div className="mt-2 flex flex-wrap gap-3 text-sm text-gray-500">
                 <span>{selectedVideo.channel_title}</span>
                 <span>{selectedVideo.category_title || "YouTube"}</span>
-                <span>{selectedVideo.trend_stage || "watchlist"}</span>
-                <span>Score {formatFixedNumber(selectedVideo.virality_score, 1)}</span>
-                <span>VPH {formatCompactNumber(selectedVideo.views_per_hour)}</span>
+                <span>
+                  {selectedVideo.source === "MANUAL"
+                    ? "manual"
+                    : selectedVideo.trend_stage || "watchlist"}
+                </span>
+                {selectedVideo.source !== "MANUAL" ? (
+                  <>
+                    <span>Score {formatFixedNumber(selectedVideo.virality_score, 1)}</span>
+                    <span>VPH {formatCompactNumber(selectedVideo.views_per_hour)}</span>
+                  </>
+                ) : null}
               </div>
             ) : null}
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-            {transcriptLoading ? (
+            {mode === "manual" ? (
+              <div className="space-y-4">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-gray-700">
+                    Title or Heading
+                  </label>
+                  <input
+                    value={manualTitle}
+                    onChange={(e) => setManualTitle(e.target.value)}
+                    placeholder="Add the title for this transcript"
+                    className="w-full rounded border px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-gray-700">
+                    Category
+                  </label>
+                  <input
+                    value={manualCategory}
+                    onChange={(e) => setManualCategory(e.target.value)}
+                    placeholder="Technology, AI, Business..."
+                    className="w-full rounded border px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-gray-700">
+                    Transcript
+                  </label>
+                  <textarea
+                    value={manualTranscript}
+                    onChange={(e) => setManualTranscript(e.target.value)}
+                    placeholder="Paste or write the transcript here."
+                    className="min-h-[420px] w-full rounded border px-3 py-2 text-sm leading-7"
+                  />
+                </div>
+
+                <button
+                  onClick={() => void handleCreateManualTranscript()}
+                  disabled={savingManualTranscript}
+                  className="rounded-lg border border-blue-600 bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {savingManualTranscript ? "Saving..." : "Save Transcript"}
+                </button>
+              </div>
+            ) : transcriptLoading ? (
               <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500">
                 Loading transcript...
               </div>
@@ -206,9 +483,9 @@ export default function DraftPage() {
               </div>
             )}
           </div>
-        </div>
+          </div>
 
-        <div className="flex min-h-[calc(100vh-120px)] flex-col gap-4">
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.8fr)]">
           <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
             <h3 className="text-base font-semibold text-gray-900">Draft Settings</h3>
             <div className="mt-4 space-y-4">
@@ -231,11 +508,47 @@ export default function DraftPage() {
 
               <div>
                 <label className="mb-2 block text-sm font-medium text-gray-700">
+                  Saved Prompt
+                </label>
+                <select
+                  value={selectedPromptId}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    if (value === "custom") {
+                      setSelectedPromptId("custom");
+                      return;
+                    }
+
+                    const promptId = Number(value);
+                    const selectedPrompt =
+                      savedPrompts.find((item) => item.id === promptId) ?? null;
+                    setSelectedPromptId(promptId);
+                    setPrompt(selectedPrompt?.prompt ?? "");
+                  }}
+                  disabled={promptsLoading}
+                  className="w-full rounded border px-3 py-2 text-sm"
+                >
+                  <option value="custom">
+                    {promptsLoading ? "Loading prompts..." : "Custom prompt"}
+                  </option>
+                  {savedPrompts.map((savedPrompt) => (
+                    <option key={savedPrompt.id} value={savedPrompt.id}>
+                      {savedPrompt.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-gray-700">
                   Prompt
                 </label>
                 <textarea
                   value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
+                  onChange={(e) => {
+                    setPrompt(e.target.value);
+                    setSelectedPromptId("custom");
+                  }}
                   placeholder="Tell the model what kind of draft you want."
                   className="min-h-28 w-full rounded border px-3 py-2 text-sm"
                 />
@@ -248,14 +561,14 @@ export default function DraftPage() {
                 <textarea
                   value={additionalContext}
                   onChange={(e) => setAdditionalContext(e.target.value)}
-                  placeholder="Audience, tone, SEO targets, structure notes, or anything else to send along."
-                  className="min-h-32 w-full rounded border px-3 py-2 text-sm"
+                  placeholder="Describe article and metadata requirements for the model."
+                  className="min-h-80 w-full rounded border px-3 py-2 text-sm leading-6"
                 />
               </div>
 
               <button
                 onClick={() => void handleGenerateDraft()}
-                disabled={!selectedVideoId || !transcript || generating}
+                disabled={mode !== "existing" || !selectedVideoId || !transcript || generating}
                 className="rounded-lg border border-emerald-600 bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {generating ? "Generating Draft..." : "Create Draft"}
@@ -263,7 +576,7 @@ export default function DraftPage() {
             </div>
           </div>
 
-          <div className="flex-1 rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
+          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
             <h3 className="text-base font-semibold text-gray-900">Latest Saved Draft</h3>
             {latestArticle ? (
               <div className="mt-4 space-y-3">
@@ -298,6 +611,7 @@ export default function DraftPage() {
                 articles.
               </div>
             )}
+          </div>
           </div>
         </div>
       </div>
