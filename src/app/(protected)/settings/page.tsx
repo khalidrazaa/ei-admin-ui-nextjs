@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 import ProtectedPageShell from "@/components/layout/ProtectedPageShell";
@@ -41,6 +41,26 @@ function resolveTab(value: string | null): SettingsTab {
 }
 
 export default function SettingsPage() {
+  return (
+    <Suspense fallback={<SettingsPageFallback />}>
+      <SettingsPageContent />
+    </Suspense>
+  );
+}
+
+function SettingsPageFallback() {
+  return (
+    <ProtectedPageShell
+      title="Settings"
+      description="Manage configuration shared across the admin app."
+      sidebar={<div className="text-sm text-gray-400">Loading tabs...</div>}
+    >
+      <div className="text-sm text-gray-500">Loading settings...</div>
+    </ProtectedPageShell>
+  );
+}
+
+function SettingsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const activeTab = resolveTab(searchParams.get("tab"));
