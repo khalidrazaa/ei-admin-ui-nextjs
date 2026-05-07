@@ -8,6 +8,7 @@ import Toast from "@/components/ui/Toast";
 import TranscriptModal from "@/components/ui/TranscriptModal";
 import VideoCard from "@/components/ui/VideoCard";
 import {
+  getPopularScanRegions,
   generateDraftArticle,
   getPopularScanSettings,
   getVideoTranscript,
@@ -23,6 +24,7 @@ import {
 import {
   PopularScanSettings,
   PopularVideo,
+  YouTubeRegion,
   VideoTranscript,
 } from "@/types/types";
 
@@ -77,6 +79,7 @@ export default function YoutubePopularPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [messageType, setMessageType] = useState<"success" | "error" | "info" | null>(null);
   const [scanSettings, setScanSettings] = useState<PopularScanSettings>(DEFAULT_SCAN_SETTINGS);
+  const [availableRegions, setAvailableRegions] = useState<YouTubeRegion[]>([]);
   const [settingsLoading, setSettingsLoading] = useState(true);
   const [transcriptReadLoadingId, setTranscriptReadLoadingId] = useState<number | null>(null);
   const [transcriptLoading, setTranscriptLoading] = useState(false);
@@ -104,31 +107,37 @@ export default function YoutubePopularPage() {
 
   const regionOptions = useMemo(
     () => {
-      const codes = new Set<string>();
+      const labels = new Map<string, string>();
+
+      availableRegions.forEach((region) => {
+        if (region.code) {
+          labels.set(region.code, `${region.name} (${region.code})`);
+        }
+      });
 
       scanSettings.region_codes.forEach((code) => {
-        if (code) {
-          codes.add(code);
+        if (code && !labels.has(code)) {
+          labels.set(code, code);
         }
       });
 
       videos.forEach((video) => {
-        if (video.region_code) {
-          codes.add(video.region_code);
+        if (video.region_code && !labels.has(video.region_code)) {
+          labels.set(video.region_code, video.region_code);
         }
       });
 
       return [
         { label: "All Regions", value: "" },
-        ...Array.from(codes)
+        ...Array.from(labels.entries())
           .sort()
-          .map((code) => ({
-            label: code,
+          .map(([code, label]) => ({
+            label,
             value: code,
           })),
       ];
     },
-    [scanSettings.region_codes, videos]
+    [availableRegions, scanSettings.region_codes, videos]
   );
 
   const categories = useMemo(() => {
@@ -234,6 +243,13 @@ export default function YoutubePopularPage() {
           region_codes: settings.region_codes,
           max_results: settings.max_results,
         });
+
+        const regions = settings.available_regions ?? (await getPopularScanRegions());
+        setAvailableRegions(regions);
+
+        if (settings.region_codes.length > 0) {
+          setRegionCode((current) => current || settings.region_codes[0]);
+        }
       } catch (err) {
         console.error("Failed to load popular scan settings", err);
         setMessage("Failed to load popular scan settings");

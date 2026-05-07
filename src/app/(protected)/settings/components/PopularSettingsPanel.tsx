@@ -10,11 +10,13 @@ type PopularSettingsPanelProps = {
   scanSettings: PopularScanSettings;
   settingsLoading: boolean;
   settingsSaving: boolean;
+  regionsRefreshing: boolean;
   onRegionSearchChange: (value: string) => void;
   onMaxResultsChange: (value: number) => void;
   onToggleRegion: (regionCode: string) => void;
   onSelectAllRegions: () => void;
   onSave: () => void;
+  onRefreshRegions: () => void;
   className?: string;
 };
 
@@ -25,11 +27,13 @@ export default function PopularSettingsPanel({
   scanSettings,
   settingsLoading,
   settingsSaving,
+  regionsRefreshing,
   onRegionSearchChange,
   onMaxResultsChange,
   onToggleRegion,
   onSelectAllRegions,
   onSave,
+  onRefreshRegions,
   className = "",
 }: PopularSettingsPanelProps) {
   return (
@@ -39,6 +43,15 @@ export default function PopularSettingsPanel({
       <div className="flex flex-wrap items-start justify-between gap-3">
 
         <div className="flex gap-2">
+          <Button
+            variant="secondary"
+            type="button"
+            onClick={onRefreshRegions}
+            disabled={settingsLoading || regionsRefreshing}
+            className="px-3 py-2 text-sm"
+          >
+            {regionsRefreshing ? "Fetching..." : "Fetch Regions"}
+          </Button>
           <Button
             variant="secondary"
             type="button"
@@ -100,7 +113,7 @@ export default function PopularSettingsPanel({
 
           {settingsLoading ? (
             <div className="rounded-lg border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500">
-              Loading available regions from YouTube...
+              Loading regions from database...
             </div>
           ) : (
             <div className="grid min-h-[24rem] flex-1 gap-2 overflow-y-auto rounded-lg border border-gray-200 p-3 sm:grid-cols-2 xl:grid-cols-3">

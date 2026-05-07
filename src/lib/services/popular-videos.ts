@@ -40,6 +40,12 @@ export async function getPopularScanRegions(): Promise<YouTubeRegion[]> {
   }) as Promise<YouTubeRegion[]>;
 }
 
+export async function refreshPopularScanRegions(): Promise<YouTubeRegion[]> {
+  return apiFetch("/admin/youtube-scan/popular/regions/refresh", {
+    method: "POST",
+  }) as Promise<YouTubeRegion[]>;
+}
+
 export async function getPopularScanSettings(): Promise<PopularScanSettings> {
   return apiFetch("/admin/youtube-scan/popular/settings", {
     method: "GET",

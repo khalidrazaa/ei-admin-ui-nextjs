@@ -93,6 +93,7 @@ export interface YouTubeRegion {
 export interface PopularScanSettings {
   region_codes: string[];
   max_results: number;
+  available_regions?: YouTubeRegion[];
 }
 
 export interface PopularScanRunResponse {

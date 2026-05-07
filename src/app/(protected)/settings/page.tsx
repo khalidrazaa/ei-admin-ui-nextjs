@@ -8,6 +8,7 @@ import Toast from "@/components/ui/Toast";
 import {
   getPopularScanRegions,
   getPopularScanSettings,
+  refreshPopularScanRegions,
   updatePopularScanSettings,
 } from "@/lib/services/popular-videos";
 import {
@@ -53,6 +54,7 @@ export default function SettingsPage() {
   const [availableRegions, setAvailableRegions] = useState<YouTubeRegion[]>([]);
   const [settingsLoading, setSettingsLoading] = useState(true);
   const [settingsSaving, setSettingsSaving] = useState(false);
+  const [regionsRefreshing, setRegionsRefreshing] = useState(false);
   const [regionSearch, setRegionSearch] = useState("");
   const [prompts, setPrompts] = useState<DraftPrompt[]>([]);
   const [promptsLoading, setPromptsLoading] = useState(true);
@@ -98,19 +100,16 @@ export default function SettingsPage() {
           max_results: settings.max_results,
         });
 
-        try {
+        const storedRegions = settings.available_regions ?? [];
+        if (storedRegions.length > 0) {
+          setAvailableRegions(storedRegions);
+        } else {
           const regions = await getPopularScanRegions();
-          setAvailableRegions(regions);
-        } catch (err) {
-          console.error("Failed to load YouTube regions", err);
           setAvailableRegions(
-            settings.region_codes.map((code) => ({
-              code,
-              name: code,
-            }))
+            regions.length > 0
+              ? regions
+              : settings.region_codes.map((code) => ({ code, name: code }))
           );
-          setMessage("Loaded saved settings, but failed to load YouTube regions");
-          setMessageType("error");
         }
       } catch (err) {
         console.error("Failed to load popular scan settings", err);
@@ -161,7 +160,10 @@ export default function SettingsPage() {
       setMessageType("info");
 
       const saved = await updatePopularScanSettings(scanSettings);
-      setScanSettings(saved);
+      setScanSettings({
+        region_codes: saved.region_codes,
+        max_results: saved.max_results,
+      });
       setMessage("Popular scan settings saved.");
       setMessageType("success");
     } catch (err) {
@@ -172,6 +174,25 @@ export default function SettingsPage() {
       setMessageType("error");
     } finally {
       setSettingsSaving(false);
+    }
+  }
+
+  async function handleRefreshRegions() {
+    try {
+      setRegionsRefreshing(true);
+      setMessage("Fetching regions from YouTube and saving to database...");
+      setMessageType("info");
+
+      const regions = await refreshPopularScanRegions();
+      setAvailableRegions(regions);
+      setMessage(`Region list refreshed (${regions.length} regions).`);
+      setMessageType("success");
+    } catch (err) {
+      console.error("Failed to refresh regions", err);
+      setMessage(err instanceof Error ? err.message : "Failed to refresh regions");
+      setMessageType("error");
+    } finally {
+      setRegionsRefreshing(false);
     }
   }
 
@@ -323,6 +344,7 @@ export default function SettingsPage() {
             scanSettings={scanSettings}
             settingsLoading={settingsLoading}
             settingsSaving={settingsSaving}
+            regionsRefreshing={regionsRefreshing}
             onRegionSearchChange={setRegionSearch}
             onMaxResultsChange={(value) => {
               setScanSettings((current) => ({
@@ -340,6 +362,7 @@ export default function SettingsPage() {
               }))
             }
             onSave={() => void handleSaveScanSettings()}
+            onRefreshRegions={() => void handleRefreshRegions()}
             className="flex-1"
           />
         ) : null}
