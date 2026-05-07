@@ -1,5 +1,11 @@
 import { apiFetch } from "@/lib/api";
-import { Article, DraftArticleRequest, PopularVideo, VideoTranscript } from "@/types/types";
+import {
+  Article,
+  DraftArticleRequest,
+  ManualTranscriptRequest,
+  PopularVideo,
+  VideoTranscript,
+} from "@/types/types";
 
 export async function getTranscriptVideos(): Promise<PopularVideo[]> {
   return apiFetch("/admin/youtube-scan/transcripts/videos", {
@@ -11,6 +17,15 @@ export async function getDraftTranscript(videoId: number): Promise<VideoTranscri
   return apiFetch(`/admin/youtube-scan/videos/${videoId}/transcript`, {
     method: "GET",
   }) as Promise<VideoTranscript>;
+}
+
+export async function createManualTranscript(
+  payload: ManualTranscriptRequest
+): Promise<PopularVideo> {
+  return apiFetch("/admin/youtube-scan/transcripts/manual", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  }) as Promise<PopularVideo>;
 }
 
 export async function generateDraftFromTranscript(

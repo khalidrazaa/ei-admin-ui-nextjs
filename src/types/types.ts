@@ -64,6 +64,27 @@ export interface DraftArticleRequest {
   additional_context?: string;
 }
 
+export interface ManualTranscriptRequest {
+  title: string;
+  category_title: string;
+  transcript_text: string;
+}
+
+export interface DraftPrompt {
+  id: number;
+  name: string;
+  prompt: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DraftPromptRequest {
+  name: string;
+  prompt: string;
+  is_active: boolean;
+}
+
 export interface YouTubeRegion {
   code: string;
   name: string;
@@ -72,6 +93,7 @@ export interface YouTubeRegion {
 export interface PopularScanSettings {
   region_codes: string[];
   max_results: number;
+  available_regions?: YouTubeRegion[];
 }
 
 export interface PopularScanRunResponse {

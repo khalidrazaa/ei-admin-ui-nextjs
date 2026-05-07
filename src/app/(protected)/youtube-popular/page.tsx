@@ -8,8 +8,8 @@ import Toast from "@/components/ui/Toast";
 import TranscriptModal from "@/components/ui/TranscriptModal";
 import VideoCard from "@/components/ui/VideoCard";
 import {
-  generateDraftArticle,
   getPopularScanRegions,
+  generateDraftArticle,
   getPopularScanSettings,
   getVideoTranscript,
   getPopularVideos,
@@ -24,8 +24,8 @@ import {
 import {
   PopularScanSettings,
   PopularVideo,
-  VideoTranscript,
   YouTubeRegion,
+  VideoTranscript,
 } from "@/types/types";
 
 const SORT_OPTIONS: Array<{ value: VideoSort; label: string }> = [
@@ -106,14 +106,38 @@ export default function YoutubePopularPage() {
   );
 
   const regionOptions = useMemo(
-    () => [
-      { label: "All Regions", value: "" },
-      ...availableRegions.map((region) => ({
-        label: region.name,
-        value: region.code,
-      })),
-    ],
-    [availableRegions]
+    () => {
+      const labels = new Map<string, string>();
+
+      availableRegions.forEach((region) => {
+        if (region.code) {
+          labels.set(region.code, `${region.name} (${region.code})`);
+        }
+      });
+
+      scanSettings.region_codes.forEach((code) => {
+        if (code && !labels.has(code)) {
+          labels.set(code, code);
+        }
+      });
+
+      videos.forEach((video) => {
+        if (video.region_code && !labels.has(video.region_code)) {
+          labels.set(video.region_code, video.region_code);
+        }
+      });
+
+      return [
+        { label: "All Regions", value: "" },
+        ...Array.from(labels.entries())
+          .sort()
+          .map(([code, label]) => ({
+            label,
+            value: code,
+          })),
+      ];
+    },
+    [availableRegions, scanSettings.region_codes, videos]
   );
 
   const categories = useMemo(() => {
@@ -214,15 +238,18 @@ export default function YoutubePopularPage() {
     async function loadPopularScanConfig() {
       try {
         setSettingsLoading(true);
-        const [regions, settings] = await Promise.all([
-          getPopularScanRegions(),
-          getPopularScanSettings(),
-        ]);
-        setAvailableRegions(regions);
+        const settings = await getPopularScanSettings();
         setScanSettings({
           region_codes: settings.region_codes,
           max_results: settings.max_results,
         });
+
+        const regions = settings.available_regions ?? (await getPopularScanRegions());
+        setAvailableRegions(regions);
+
+        if (settings.region_codes.length > 0) {
+          setRegionCode((current) => current || settings.region_codes[0]);
+        }
       } catch (err) {
         console.error("Failed to load popular scan settings", err);
         setMessage("Failed to load popular scan settings");
