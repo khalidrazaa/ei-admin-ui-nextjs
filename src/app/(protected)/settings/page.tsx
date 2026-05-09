@@ -17,8 +17,20 @@ import {
   getDraftPrompts,
   updateDraftPrompt,
 } from "@/lib/services/draft-prompts";
-import { DraftPrompt, PopularScanSettings, YouTubeRegion } from "@/types/types";
+import {
+  createHostSite,
+  deleteHostSite,
+  getHostSites,
+  updateHostSite,
+} from "@/lib/services/host-sites";
+import {
+  DraftPrompt,
+  HostSite,
+  PopularScanSettings,
+  YouTubeRegion,
+} from "@/types/types";
 
+import HostSiteSettingsPanel from "./components/HostSiteSettingsPanel";
 import PopularSettingsPanel from "./components/PopularSettingsPanel";
 import PromptSettingsPanel from "./components/PromptSettingsPanel";
 
@@ -30,6 +42,7 @@ const DEFAULT_SCAN_SETTINGS: PopularScanSettings = {
 const SETTINGS_TABS = [
   { key: "youtube-popular", label: "Youtube Popular" },
   { key: "prompts", label: "Prompts" },
+  { key: "host-sites", label: "Host Sites" },
 ] as const;
 
 type SettingsTab = (typeof SETTINGS_TABS)[number]["key"];
@@ -84,6 +97,13 @@ function SettingsPageContent() {
   const [promptName, setPromptName] = useState("");
   const [promptText, setPromptText] = useState("");
   const [promptActive, setPromptActive] = useState(true);
+  const [hostSites, setHostSites] = useState<HostSite[]>([]);
+  const [hostSitesLoading, setHostSitesLoading] = useState(true);
+  const [hostSiteSaving, setHostSiteSaving] = useState(false);
+  const [hostSiteDeleting, setHostSiteDeleting] = useState(false);
+  const [selectedHostSiteId, setSelectedHostSiteId] = useState<number | null>(null);
+  const [hostValue, setHostValue] = useState("");
+  const [hostActive, setHostActive] = useState(true);
 
   const filteredAvailableRegions = useMemo(() => {
     const search = regionSearch.trim().toLowerCase();
@@ -159,6 +179,24 @@ function SettingsPageContent() {
     }
 
     void loadPrompts();
+  }, []);
+
+  useEffect(() => {
+    async function loadHostSites() {
+      try {
+        setHostSitesLoading(true);
+        const data = await getHostSites();
+        setHostSites(data);
+      } catch (err) {
+        console.error("Failed to load host sites", err);
+        setMessage("Failed to load host sites");
+        setMessageType("error");
+      } finally {
+        setHostSitesLoading(false);
+      }
+    }
+
+    void loadHostSites();
   }, []);
 
   function toggleScanRegion(regionCode: string) {
@@ -299,6 +337,86 @@ function SettingsPageContent() {
     }
   }
 
+  function resetHostSiteForm() {
+    setSelectedHostSiteId(null);
+    setHostValue("");
+    setHostActive(true);
+  }
+
+  function selectHostSite(hostSite: HostSite) {
+    setSelectedHostSiteId(hostSite.id);
+    setHostValue(hostSite.host);
+    setHostActive(hostSite.is_active);
+  }
+
+  async function handleSaveHostSite() {
+    const host = hostValue.trim();
+    if (!host) {
+      setMessage("Host site is required.");
+      setMessageType("error");
+      return;
+    }
+
+    try {
+      setHostSiteSaving(true);
+      setMessage("Saving host site...");
+      setMessageType("info");
+
+      const saved = selectedHostSiteId
+        ? await updateHostSite(selectedHostSiteId, {
+            host,
+            is_active: hostActive,
+          })
+        : await createHostSite({
+            host,
+            is_active: hostActive,
+          });
+
+      setHostSites((current) => {
+        const exists = current.some((item) => item.id === saved.id);
+        if (exists) {
+          return current.map((item) => (item.id === saved.id ? saved : item));
+        }
+        return [saved, ...current];
+      });
+
+      selectHostSite(saved);
+      setMessage("Host site saved.");
+      setMessageType("success");
+    } catch (err) {
+      console.error("Failed to save host site", err);
+      setMessage(err instanceof Error ? err.message : "Failed to save host site");
+      setMessageType("error");
+    } finally {
+      setHostSiteSaving(false);
+    }
+  }
+
+  async function handleDeleteHostSite() {
+    if (!selectedHostSiteId) {
+      return;
+    }
+
+    try {
+      setHostSiteDeleting(true);
+      setMessage("Deleting host site...");
+      setMessageType("info");
+      await deleteHostSite(selectedHostSiteId);
+      setHostSites((current) =>
+        current.filter((hostSite) => hostSite.id !== selectedHostSiteId)
+      );
+      resetHostSiteForm();
+      setMessage("Host site deleted.");
+      setMessageType("success");
+    } catch (err) {
+      console.error("Failed to delete host site", err);
+      setMessage(err instanceof Error ? err.message : "Failed to delete host site");
+      setMessageType("error");
+    } finally {
+      setHostSiteDeleting(false);
+    }
+  }
+
   function selectTab(tab: SettingsTab) {
     const params = new URLSearchParams(searchParams.toString());
     params.set("tab", tab);
@@ -345,6 +463,8 @@ function SettingsPageContent() {
               ? "Youtube Popular Scan Settings"
               : activeTab === "prompts"
                 ? "Draft Prompts"
+                : activeTab === "host-sites"
+                  ? "Host Site Settings"
               : "Settings"}
           </h2>
           <p className="mt-1 text-sm text-gray-500">
@@ -352,6 +472,8 @@ function SettingsPageContent() {
               ? "Choose scan regions and fetch limits for YouTube popular videos."
               : activeTab === "prompts"
                 ? "Write reusable draft prompts for transcript article generation."
+                : activeTab === "host-sites"
+                  ? "Define host sites used for article assignment in the editor."
               : "Manage shared app settings."}
           </p>
         </div>
@@ -404,6 +526,24 @@ function SettingsPageContent() {
             onActiveChange={setPromptActive}
             onSave={() => void handleSavePrompt()}
             onDelete={() => void handleDeletePrompt()}
+          />
+        ) : null}
+
+        {activeTab === "host-sites" ? (
+          <HostSiteSettingsPanel
+            hostSites={hostSites}
+            selectedHostSiteId={selectedHostSiteId}
+            hostValue={hostValue}
+            hostActive={hostActive}
+            loading={hostSitesLoading}
+            saving={hostSiteSaving}
+            deleting={hostSiteDeleting}
+            onSelectHostSite={selectHostSite}
+            onNewHostSite={resetHostSiteForm}
+            onHostValueChange={setHostValue}
+            onHostActiveChange={setHostActive}
+            onSave={() => void handleSaveHostSite()}
+            onDelete={() => void handleDeleteHostSite()}
           />
         ) : null}
 
