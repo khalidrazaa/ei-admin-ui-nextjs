@@ -85,6 +85,19 @@ export interface DraftPromptRequest {
   is_active: boolean;
 }
 
+export interface HostSite {
+  id: number;
+  host: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface HostSiteRequest {
+  host: string;
+  is_active: boolean;
+}
+
 export interface YouTubeRegion {
   code: string;
   name: string;
