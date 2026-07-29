@@ -56,7 +56,7 @@ export async function deleteNiche(nicheId: number) {
 }
 
 export async function createNiche(name: string) {
-  return apiFetch<Niche>("/admin/niches", {
+  return apiFetch<Niche>("/admin/niches/", {
     method: "POST",
     body: JSON.stringify({
       name,
