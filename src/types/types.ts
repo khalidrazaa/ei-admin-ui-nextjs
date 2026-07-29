@@ -98,6 +98,28 @@ export interface HostSiteRequest {
   is_active: boolean;
 }
 
+export interface PublicApiKey {
+  id: number;
+  host_site_id: number;
+  host: string;
+  name: string;
+  key_prefix: string;
+  is_active: boolean;
+  created_at: string;
+  revoked_at: string | null;
+  last_used_at: string | null;
+}
+
+export interface PublicApiKeyGenerateRequest {
+  host: string;
+  name: string;
+  deactivate_old_keys: boolean;
+}
+
+export interface PublicApiKeyGenerateResponse extends PublicApiKey {
+  api_key: string;
+}
+
 export interface YouTubeRegion {
   code: string;
   name: string;

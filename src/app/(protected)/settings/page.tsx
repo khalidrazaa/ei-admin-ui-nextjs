@@ -24,8 +24,14 @@ import {
   updateHostSite,
 } from "@/lib/services/host-sites";
 import {
+  generatePublicApiKey,
+  getPublicApiKeys,
+  revokePublicApiKey,
+} from "@/lib/services/public-api-keys";
+import {
   DraftPrompt,
   HostSite,
+  PublicApiKey,
   PopularScanSettings,
   YouTubeRegion,
 } from "@/types/types";
@@ -104,6 +110,12 @@ function SettingsPageContent() {
   const [selectedHostSiteId, setSelectedHostSiteId] = useState<number | null>(null);
   const [hostValue, setHostValue] = useState("");
   const [hostActive, setHostActive] = useState(true);
+  const [publicApiKeys, setPublicApiKeys] = useState<PublicApiKey[]>([]);
+  const [apiKeysLoading, setApiKeysLoading] = useState(true);
+  const [apiKeyGenerating, setApiKeyGenerating] = useState(false);
+  const [apiKeyRevokingId, setApiKeyRevokingId] = useState<number | null>(null);
+  const [rotateOnGenerate, setRotateOnGenerate] = useState(true);
+  const [generatedApiKey, setGeneratedApiKey] = useState<string | null>(null);
 
   const filteredAvailableRegions = useMemo(() => {
     const search = regionSearch.trim().toLowerCase();
@@ -116,6 +128,25 @@ function SettingsPageContent() {
       return haystack.includes(search);
     });
   }, [availableRegions, regionSearch]);
+
+  const selectedHostSite = useMemo(
+    () =>
+      selectedHostSiteId
+        ? hostSites.find((hostSite) => hostSite.id === selectedHostSiteId) ?? null
+        : null,
+    [hostSites, selectedHostSiteId]
+  );
+
+  const selectedHostSiteKeys = useMemo(() => {
+    if (!selectedHostSite) {
+      return [] as PublicApiKey[];
+    }
+
+    const normalizedHost = selectedHostSite.host.trim().toLowerCase();
+    return publicApiKeys.filter(
+      (apiKey) => apiKey.host.trim().toLowerCase() === normalizedHost
+    );
+  }, [publicApiKeys, selectedHostSite]);
 
   useEffect(() => {
     if (!message || messageType === null) {
@@ -198,6 +229,38 @@ function SettingsPageContent() {
 
     void loadHostSites();
   }, []);
+
+  useEffect(() => {
+    async function loadApiKeys() {
+      try {
+        setApiKeysLoading(true);
+        const data = await getPublicApiKeys();
+        setPublicApiKeys(data);
+      } catch (err) {
+        console.error("Failed to load public api keys", err);
+        setMessage("Failed to load host API keys");
+        setMessageType("error");
+      } finally {
+        setApiKeysLoading(false);
+      }
+    }
+
+    void loadApiKeys();
+  }, []);
+
+  async function refreshPublicApiKeys() {
+    try {
+      setApiKeysLoading(true);
+      const data = await getPublicApiKeys();
+      setPublicApiKeys(data);
+    } catch (err) {
+      console.error("Failed to refresh public api keys", err);
+      setMessage("Failed to refresh host API keys");
+      setMessageType("error");
+    } finally {
+      setApiKeysLoading(false);
+    }
+  }
 
   function toggleScanRegion(regionCode: string) {
     setScanSettings((current) => {
@@ -341,12 +404,14 @@ function SettingsPageContent() {
     setSelectedHostSiteId(null);
     setHostValue("");
     setHostActive(true);
+    setGeneratedApiKey(null);
   }
 
   function selectHostSite(hostSite: HostSite) {
     setSelectedHostSiteId(hostSite.id);
     setHostValue(hostSite.host);
     setHostActive(hostSite.is_active);
+    setGeneratedApiKey(null);
   }
 
   async function handleSaveHostSite() {
@@ -381,6 +446,7 @@ function SettingsPageContent() {
       });
 
       selectHostSite(saved);
+      await refreshPublicApiKeys();
       setMessage("Host site saved.");
       setMessageType("success");
     } catch (err) {
@@ -406,6 +472,7 @@ function SettingsPageContent() {
         current.filter((hostSite) => hostSite.id !== selectedHostSiteId)
       );
       resetHostSiteForm();
+      await refreshPublicApiKeys();
       setMessage("Host site deleted.");
       setMessageType("success");
     } catch (err) {
@@ -414,6 +481,58 @@ function SettingsPageContent() {
       setMessageType("error");
     } finally {
       setHostSiteDeleting(false);
+    }
+  }
+
+  async function handleGenerateApiKey() {
+    if (!selectedHostSite) {
+      setMessage("Select and save a host site first.");
+      setMessageType("error");
+      return;
+    }
+
+    try {
+      setApiKeyGenerating(true);
+      setMessage("Generating API key...");
+      setMessageType("info");
+
+      const generated = await generatePublicApiKey({
+        host: selectedHostSite.host,
+        name: `${selectedHostSite.host} frontend key`,
+        deactivate_old_keys: rotateOnGenerate,
+      });
+
+      setGeneratedApiKey(generated.api_key);
+      await refreshPublicApiKeys();
+      setMessage("API key generated. Copy it now (shown once).");
+      setMessageType("success");
+    } catch (err) {
+      console.error("Failed to generate API key", err);
+      setMessage(err instanceof Error ? err.message : "Failed to generate API key");
+      setMessageType("error");
+    } finally {
+      setApiKeyGenerating(false);
+    }
+  }
+
+  async function handleRevokeApiKey(apiKeyId: number) {
+    try {
+      setApiKeyRevokingId(apiKeyId);
+      setMessage("Deleting API key...");
+      setMessageType("info");
+      const updated = await revokePublicApiKey(apiKeyId);
+
+      setPublicApiKeys((current) =>
+        current.map((item) => (item.id === updated.id ? updated : item))
+      );
+      setMessage("API key deleted.");
+      setMessageType("success");
+    } catch (err) {
+      console.error("Failed to delete API key", err);
+      setMessage(err instanceof Error ? err.message : "Failed to delete API key");
+      setMessageType("error");
+    } finally {
+      setApiKeyRevokingId(null);
     }
   }
 
@@ -473,7 +592,7 @@ function SettingsPageContent() {
               : activeTab === "prompts"
                 ? "Write reusable draft prompts for transcript article generation."
                 : activeTab === "host-sites"
-                  ? "Define host sites used for article assignment in the editor."
+                  ? "Define host sites and manage their frontend API keys."
               : "Manage shared app settings."}
           </p>
         </div>
@@ -538,12 +657,22 @@ function SettingsPageContent() {
             loading={hostSitesLoading}
             saving={hostSiteSaving}
             deleting={hostSiteDeleting}
+            publicApiKeys={selectedHostSiteKeys}
+            apiKeysLoading={apiKeysLoading}
+            generatingApiKey={apiKeyGenerating}
+            revokingApiKeyId={apiKeyRevokingId}
+            rotateOnGenerate={rotateOnGenerate}
+            generatedApiKey={generatedApiKey}
             onSelectHostSite={selectHostSite}
             onNewHostSite={resetHostSiteForm}
             onHostValueChange={setHostValue}
             onHostActiveChange={setHostActive}
+            onRotateOnGenerateChange={setRotateOnGenerate}
             onSave={() => void handleSaveHostSite()}
             onDelete={() => void handleDeleteHostSite()}
+            onGenerateApiKey={() => void handleGenerateApiKey()}
+            onRevokeApiKey={(apiKeyId) => void handleRevokeApiKey(apiKeyId)}
+            onClearGeneratedApiKey={() => setGeneratedApiKey(null)}
           />
         ) : null}
 
