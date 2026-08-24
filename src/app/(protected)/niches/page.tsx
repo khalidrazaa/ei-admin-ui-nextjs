@@ -20,14 +20,12 @@ import {
 } from "@/lib/services/niche";
 import {
   getVideosByNiche,
-  VideoDays,
-  VideoSort,
-} from "@/lib/services/scaned-trends";
+} from "@/lib/services/videos";
 import {
   formatCompactNumber,
   formatFixedNumber,
 } from "@/lib/utils/formatters";
-import { TrendVideo } from "@/types/types";
+import { TrendVideo, VideosPagination, videodays, VideoSort } from "@/types/types";
 
 const SORT_OPTIONS: Array<{ value: VideoSort; label: string }> = [
   { value: "score", label: "Trending Score" },
@@ -132,6 +130,15 @@ function NichesPageContent() {
   const [days, setDays] = useState<VideoDays | "">(
     parseDays(searchParams.get("days")) ?? ""
   );
+  const [videoPagination, setVideoPagination] =
+    useState<VideosPagination>({
+      page: 1,
+      size: 20,
+      total: 0,
+      pages: 1,
+      has_next: false,
+      has_prev: false,
+    });
 
   const videoFilters = useMemo(
     () => ({
@@ -154,28 +161,38 @@ function NichesPageContent() {
     let totalViewsPerHour = 0;
 
     videos.forEach((video) => {
-      totalScore += video.virality_score;
-      totalViewsPerHour += video.views_per_hour;
+      totalScore += Number(video.virality_score ?? 0);
+      totalViewsPerHour += Number(video.views_per_hour ?? 0);
 
-      if (video.trend_stage === "trending") stageCounts.trending += 1;
-      else if (video.trend_stage === "breakout") stageCounts.breakout += 1;
-      else if (video.trend_stage === "emerging") stageCounts.emerging += 1;
-      else stageCounts.watchlist += 1;
+      if (video.trend_stage === "trending") {
+        stageCounts.trending += 1;
+      } else if (video.trend_stage === "breakout") {
+        stageCounts.breakout += 1;
+      } else if (video.trend_stage === "emerging") {
+        stageCounts.emerging += 1;
+      } else {
+        stageCounts.watchlist += 1;
+      }
     });
 
     return {
-      total: videos.length,
-      avgScore: videos.length ? totalScore / videos.length : 0,
-      avgViewsPerHour: videos.length ? totalViewsPerHour / videos.length : 0,
+      total: videoPagination.total,
+      avgScore: videos.length
+        ? totalScore / videos.length
+        : 0,
+      avgViewsPerHour: videos.length
+        ? totalViewsPerHour / videos.length
+        : 0,
       ...stageCounts,
     };
-  }, [videos]);
+  }, [videos, videoPagination.total]);
 
   function updateQueryParams(nextValues: {
     niche?: number | null;
     sort?: VideoSort;
     min_views?: string;
     days?: VideoDays | "";
+    page?: number;
   }) {
     const params = new URLSearchParams(searchParams.toString());
 
@@ -207,11 +224,35 @@ function NichesPageContent() {
       }
     }
 
+    if (nextValues.page !== undefined) {
+      if (nextValues.page <= 1) {
+        params.delete("page");
+      } else {
+        params.set("page", String(nextValues.page));
+      }
+    }
+
     const queryString = params.toString();
-    router.replace(queryString ? `${pathname}?${queryString}` : pathname, {
-      scroll: false,
-    });
+
+    router.replace(
+      queryString ? `${pathname}?${queryString}` : pathname,
+      { scroll: false }
+    );
   }
+
+  function parsePage(value: string | null): number {
+    if (!value) {
+      return 1;
+    }
+
+    const parsed = Number(value);
+
+    return Number.isInteger(parsed) && parsed > 0
+      ? parsed
+      : 1;
+  }
+
+  const page = parsePage(searchParams.get("page"));
 
   useEffect(() => {
     async function load() {
@@ -254,24 +295,62 @@ function NichesPageContent() {
   useEffect(() => {
     if (!selectedNicheId) {
       setVideos([]);
+      setVideoPagination({
+        page: 1,
+        size: 20,
+        total: 0,
+        pages: 1,
+        has_next: false,
+        has_prev: false,
+      });
       return;
     }
-
+  
     const nicheId = selectedNicheId;
+  
     async function loadVideos() {
       try {
         setLoadingVideos(true);
-        const data = await getVideosByNiche(nicheId, videoFilters);
-        setVideos(data);
+      
+        const response = await getVideosByNiche(
+          nicheId,
+          {
+            sort,
+            min_views: minViews
+              ? Number(minViews)
+              : undefined,
+            days: days === "" ? null : days,
+            page,
+            size: 20,
+          }
+        );
+      
+        setVideos(response.items);
+        setVideoPagination(response.pagination);
       } catch (err) {
         console.error("Failed to load videos", err);
+        setVideos([]);
+        setVideoPagination({
+          page: 1,
+          size: 20,
+          total: 0,
+          pages: 1,
+          has_next: false,
+          has_prev: false,
+        });
       } finally {
         setLoadingVideos(false);
       }
     }
-
+  
     loadVideos();
-  }, [selectedNicheId, videoFilters]);
+  }, [
+    selectedNicheId,
+    sort,
+    minViews,
+    days,
+    page,
+  ]);
 
   useEffect(() => {
     setScanMessage(null);
@@ -842,21 +921,74 @@ function NichesPageContent() {
               </div>
             </div>
 
-            {loadingVideos ? (
-              <div className="flex flex-col gap-4">
-                {Array.from({ length: 4 }).map((_, index) => (
-                  <VideoCardSkeleton key={index} />
-                ))}
-              </div>
-            ) : videos.length === 0 ? (
-              <div className="text-gray-500">No videos found</div>
-            ) : (
-              <div className="flex flex-col gap-4">
-                {videos.map((video) => (
-                  <VideoCard key={video.id} video={video} />
-                ))}
-              </div>
-            )}
+{!loadingVideos && videoPagination.total > 0 && (
+  <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 pt-4">
+    <div className="text-sm text-gray-500">
+      Showing{" "}
+      <span className="font-medium text-gray-700">
+        {(videoPagination.page - 1) * videoPagination.size + 1}
+      </span>{" "}
+      to{" "}
+      <span className="font-medium text-gray-700">
+        {Math.min(
+          videoPagination.page * videoPagination.size,
+          videoPagination.total
+        )}
+      </span>{" "}
+      of{" "}
+      <span className="font-medium text-gray-700">
+        {videoPagination.total}
+      </span>{" "}
+      videos
+    </div>
+
+    <div className="flex items-center gap-2">
+      <Button
+        variant="secondary"
+        disabled={!videoPagination.has_prev || loadingVideos}
+        onClick={() => {
+          const previousPage = Math.max(
+            1,
+            videoPagination.page - 1
+          );
+
+          updateQueryParams({
+            page: previousPage,
+          });
+        }}
+      >
+        Previous
+      </Button>
+
+      <span className="px-2 text-sm text-gray-600">
+        Page{" "}
+        <span className="font-medium text-gray-900">
+          {videoPagination.page}
+        </span>{" "}
+        of{" "}
+        <span className="font-medium text-gray-900">
+          {videoPagination.pages}
+        </span>
+      </span>
+
+      <Button
+        disabled={!videoPagination.has_next || loadingVideos}
+        onClick={() => {
+          const nextPage = Math.min(
+            videoPagination.pages,
+            videoPagination.page + 1
+          );
+
+          updateQueryParams({
+            page: nextPage,
+          });
+        }}
+      >
+        Next
+      </Button>
+    </div>
+  </div>
+)}
           </>
         )}
       </ProtectedPageShell>

@@ -79,7 +79,7 @@ export async function scanNicheYouTube(
   nicheId: number
 ): Promise<ScrapeYTResponse> {
   return apiFetch<ScrapeYTResponse>(
-    `/admin/youtube-scan/niches/${nicheId}/scan-youtube`,
+    `/admin/yt-scan/niches/${nicheId}`,
     {
       method: "GET",
     }
