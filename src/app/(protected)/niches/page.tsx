@@ -7,6 +7,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import ProtectedPageShell from "@/components/layout/ProtectedPageShell";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import Button from "@/components/ui/Button";
+import Sidebar, { SidebarItem } from "@/components/ui/Sidebar";
 import VideoCard from "@/components/ui/VideoCard";
 import {
   addKeyword,
@@ -20,14 +21,12 @@ import {
 } from "@/lib/services/niche";
 import {
   getVideosByNiche,
-  VideoDays,
-  VideoSort,
-} from "@/lib/services/scaned-trends";
+} from "@/lib/services/videos";
 import {
   formatCompactNumber,
   formatFixedNumber,
 } from "@/lib/utils/formatters";
-import { TrendVideo } from "@/types/types";
+import { TrendVideo, VideosPagination, videodays, VideoSort } from "@/types/types";
 
 const SORT_OPTIONS: Array<{ value: VideoSort; label: string }> = [
   { value: "score", label: "Trending Score" },
@@ -132,6 +131,15 @@ function NichesPageContent() {
   const [days, setDays] = useState<VideoDays | "">(
     parseDays(searchParams.get("days")) ?? ""
   );
+  const [videoPagination, setVideoPagination] =
+    useState<VideosPagination>({
+      page: 1,
+      size: 20,
+      total: 0,
+      pages: 1,
+      has_next: false,
+      has_prev: false,
+    });
 
   const videoFilters = useMemo(
     () => ({
@@ -154,28 +162,38 @@ function NichesPageContent() {
     let totalViewsPerHour = 0;
 
     videos.forEach((video) => {
-      totalScore += video.virality_score;
-      totalViewsPerHour += video.views_per_hour;
+      totalScore += Number(video.virality_score ?? 0);
+      totalViewsPerHour += Number(video.views_per_hour ?? 0);
 
-      if (video.trend_stage === "trending") stageCounts.trending += 1;
-      else if (video.trend_stage === "breakout") stageCounts.breakout += 1;
-      else if (video.trend_stage === "emerging") stageCounts.emerging += 1;
-      else stageCounts.watchlist += 1;
+      if (video.trend_stage === "trending") {
+        stageCounts.trending += 1;
+      } else if (video.trend_stage === "breakout") {
+        stageCounts.breakout += 1;
+      } else if (video.trend_stage === "emerging") {
+        stageCounts.emerging += 1;
+      } else {
+        stageCounts.watchlist += 1;
+      }
     });
 
     return {
-      total: videos.length,
-      avgScore: videos.length ? totalScore / videos.length : 0,
-      avgViewsPerHour: videos.length ? totalViewsPerHour / videos.length : 0,
+      total: videoPagination.total,
+      avgScore: videos.length
+        ? totalScore / videos.length
+        : 0,
+      avgViewsPerHour: videos.length
+        ? totalViewsPerHour / videos.length
+        : 0,
       ...stageCounts,
     };
-  }, [videos]);
+  }, [videos, videoPagination.total]);
 
   function updateQueryParams(nextValues: {
     niche?: number | null;
     sort?: VideoSort;
     min_views?: string;
     days?: VideoDays | "";
+    page?: number;
   }) {
     const params = new URLSearchParams(searchParams.toString());
 
@@ -207,11 +225,35 @@ function NichesPageContent() {
       }
     }
 
+    if (nextValues.page !== undefined) {
+      if (nextValues.page <= 1) {
+        params.delete("page");
+      } else {
+        params.set("page", String(nextValues.page));
+      }
+    }
+
     const queryString = params.toString();
-    router.replace(queryString ? `${pathname}?${queryString}` : pathname, {
-      scroll: false,
-    });
+
+    router.replace(
+      queryString ? `${pathname}?${queryString}` : pathname,
+      { scroll: false }
+    );
   }
+
+  function parsePage(value: string | null): number {
+    if (!value) {
+      return 1;
+    }
+
+    const parsed = Number(value);
+
+    return Number.isInteger(parsed) && parsed > 0
+      ? parsed
+      : 1;
+  }
+
+  const page = parsePage(searchParams.get("page"));
 
   useEffect(() => {
     async function load() {
@@ -254,24 +296,62 @@ function NichesPageContent() {
   useEffect(() => {
     if (!selectedNicheId) {
       setVideos([]);
+      setVideoPagination({
+        page: 1,
+        size: 20,
+        total: 0,
+        pages: 1,
+        has_next: false,
+        has_prev: false,
+      });
       return;
     }
-
+  
     const nicheId = selectedNicheId;
+  
     async function loadVideos() {
       try {
         setLoadingVideos(true);
-        const data = await getVideosByNiche(nicheId, videoFilters);
-        setVideos(data);
+      
+        const response = await getVideosByNiche(
+          nicheId,
+          {
+            sort,
+            min_views: minViews
+              ? Number(minViews)
+              : undefined,
+            days: days === "" ? null : days,
+            page,
+            size: 20,
+          }
+        );
+      
+        setVideos(response.items);
+        setVideoPagination(response.pagination);
       } catch (err) {
         console.error("Failed to load videos", err);
+        setVideos([]);
+        setVideoPagination({
+          page: 1,
+          size: 20,
+          total: 0,
+          pages: 1,
+          has_next: false,
+          has_prev: false,
+        });
       } finally {
         setLoadingVideos(false);
       }
     }
-
+  
     loadVideos();
-  }, [selectedNicheId, videoFilters]);
+  }, [
+    selectedNicheId,
+    sort,
+    minViews,
+    days,
+    page,
+  ]);
 
   useEffect(() => {
     setScanMessage(null);
@@ -485,6 +565,110 @@ function NichesPageContent() {
     return <div>Loading niches...</div>;
   }
 
+  const sidebarItems: SidebarItem[] = niches.map((niche) => ({
+    id: niche.id,
+    label: <span className="niche-name inline-block">{niche.display_name}</span>,
+    isActive: selectedNicheId === niche.id,
+    isExpanded: Boolean(expandedNiches[niche.id]),
+    onClick: () => {
+      setSelectedNicheId(niche.id);
+      updateQueryParams({ niche: niche.id });
+      toggleExpand(niche.id);
+    },
+    actions: (
+      <>
+        <button
+          type="button"
+          aria-label={`${niche.is_active ? "Deactivate" : "Activate"} ${niche.display_name}`}
+          aria-pressed={niche.is_active}
+          onClick={() => handleToggleNiche(niche.id, !niche.is_active)}
+          className={`flex h-4 w-8 items-center rounded-full p-0.5 ${
+            niche.is_active ? "bg-green-800" : "bg-gray-300"
+          }`}
+        >
+          <span
+            className={`h-3 w-3 rounded-full bg-white transition ${
+              niche.is_active ? "translate-x-4" : ""
+            }`}
+          />
+        </button>
+        <Button variant="danger" onClick={() => setDeleteTarget(niche)}>
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="15"
+            height="24"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="lucide lucide-trash2-icon lucide-trash-2"
+            aria-hidden="true"
+          >
+            <path d="M10 11v6" />
+            <path d="M14 11v6" />
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+            <path d="M3 6h18" />
+            <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+          </svg>
+        </Button>
+      </>
+    ),
+    subitems: niche.keywords.map((keyword) => ({
+      id: keyword.id,
+      label: keyword.keyword,
+      actions: (
+        <button
+          type="button"
+          aria-label={`Delete ${keyword.keyword}`}
+          onClick={() => handleDeleteKeyword(niche.id, keyword.id)}
+          className="text-gray-500 hover:text-red-700"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="15"
+            height="24"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="lucide lucide-x-icon lucide-x"
+            aria-hidden="true"
+          >
+            <path d="M18 6 6 18" />
+            <path d="m6 6 12 12" />
+          </svg>
+        </button>
+      ),
+    })),
+    footer: (
+      <input
+        ref={(element) => {
+          inputRefs.current[niche.id] = element;
+        }}
+        type="text"
+        placeholder="Add keyword (comma separated)"
+        value={newKeywords[niche.id] || ""}
+        onChange={(event) =>
+          setNewKeywords((previous) => ({
+            ...previous,
+            [niche.id]: event.target.value,
+          }))
+        }
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            handleAddKeyword(niche.id);
+          }
+        }}
+        className="w-full rounded border px-2 py-1 text-xs"
+      />
+    ),
+  }));
+
   return (
     <>
       <ProtectedPageShell
@@ -500,126 +684,16 @@ function NichesPageContent() {
         }
         sidebar={
           <div ref={containerRef}>
-            <div className="mb-4 flex gap-1">
-              <Button onClick={handleCreateNiche}>
-                <span className="flex items-center justify-center text-lg font-semibold">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    width="24"
-                    height="24"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="lucide lucide-plus-icon lucide-plus"
-                  >
-                    <path d="M5 12h14" />
-                    <path d="M12 5v14" />
-                  </svg>
-                </span>
-              </Button>
-              <input
-                type="text"
-                placeholder="New niche name"
-                value={newNiche}
-                onChange={(e) => setNewNiche(e.target.value)}
-                className="w-full rounded border border-green-500 px-2 py-0.5 text-sm"
-              />
-            </div>
-
-            {keywordMessage ? (
-              <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                {keywordMessage}
-              </div>
-            ) : null}
-
-            <div className="space-y-3">
-              {niches.map((niche) => (
-                <div
-                  key={niche.id}
-                  className={`rounded-lg p-1 transition ${
-                    selectedNicheId === niche.id
-                      ? "border-green-400 bg-green-50"
-                      : "bg-white hover:bg-gray-50"
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <div
-                      className="flex cursor-pointer items-center gap-2"
-                      onClick={() => {
-                        setSelectedNicheId(niche.id);
-                        updateQueryParams({ niche: niche.id });
-                        toggleExpand(niche.id);
-                      }}
-                    >
-                      <span className="text-xs">
-                        {expandedNiches[niche.id] ? (
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="15"
-                            height="24"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            className="lucide lucide-chevron-down-icon lucide-chevron-down"
-                          >
-                            <path d="m6 9 6 6 6-6" />
-                          </svg>
-                        ) : (
-                          <svg
-                            xmlns="http://www.w3.org/2000/svg"
-                            width="15"
-                            height="24"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            className="lucide lucide-chevron-right-icon lucide-chevron-right"
-                          >
-                            <path d="m9 18 6-6-6-6" />
-                          </svg>
-                        )}
-                      </span>
-
-                      <span className="niche-name inline-block font-medium">
-                        {niche.display_name}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleToggleNiche(niche.id, !niche.is_active);
-                        }}
-                        className={`flex h-4 w-8 items-center rounded-full p-0.5 ${
-                          niche.is_active ? "bg-green-800" : "bg-gray-300"
-                        }`}
-                      >
-                        <div
-                          className={`h-3 w-3 rounded-full bg-white transition ${
-                            niche.is_active ? "translate-x-4" : ""
-                          }`}
-                        />
-                      </button>
-
-                      <Button
-                        variant="danger"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setDeleteTarget(niche);
-                        }}
-                      >
+            <Sidebar
+              items={sidebarItems}
+              header={
+                <>
+                  <div className="mb-4 flex gap-1">
+                    <Button onClick={handleCreateNiche}>
+                      <span className="flex items-center justify-center text-lg font-semibold">
                         <svg
                           xmlns="http://www.w3.org/2000/svg"
-                          width="15"
+                          width="24"
                           height="24"
                           viewBox="0 0 24 24"
                           fill="none"
@@ -627,81 +701,32 @@ function NichesPageContent() {
                           strokeWidth="2"
                           strokeLinecap="round"
                           strokeLinejoin="round"
-                          className="lucide lucide-trash2-icon lucide-trash-2"
+                          className="lucide lucide-plus-icon lucide-plus"
+                          aria-hidden="true"
                         >
-                          <path d="M10 11v6" />
-                          <path d="M14 11v6" />
-                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
-                          <path d="M3 6h18" />
-                          <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                          <path d="M5 12h14" />
+                          <path d="M12 5v14" />
                         </svg>
-                      </Button>
-                    </div>
+                      </span>
+                    </Button>
+                    <input
+                      type="text"
+                      placeholder="New niche name"
+                      value={newNiche}
+                      onChange={(event) => setNewNiche(event.target.value)}
+                      className="w-full rounded border border-green-500 px-2 py-0.5 text-sm"
+                    />
                   </div>
 
-                  {expandedNiches[niche.id] && (
-                    <div className="mt-3 space-y-2 pl-5">
-                      <div className="flex flex-col gap-2">
-                        {niche.keywords.map((keyword) => (
-                          <span
-                            key={keyword.id}
-                            className="flex items-center justify-between rounded bg-gray-200 px-2 py-0.5 text-xs"
-                          >
-                            {keyword.keyword}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteKeyword(niche.id, keyword.id);
-                              }}
-                              className="text-gray-500 hover:text-red-700"
-                            >
-                              <svg
-                                xmlns="http://www.w3.org/2000/svg"
-                                width="15"
-                                height="24"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                className="lucide lucide-x-icon lucide-x"
-                              >
-                                <path d="M18 6 6 18" />
-                                <path d="m6 6 12 12" />
-                              </svg>
-                            </button>
-                          </span>
-                        ))}
-                      </div>
-
-                      <input
-                        ref={(el) => {
-                          inputRefs.current[niche.id] = el;
-                        }}
-                        type="text"
-                        placeholder="Add keyword (comma separated)"
-                        value={newKeywords[niche.id] || ""}
-                        onClick={(e) => e.stopPropagation()}
-                        onChange={(e) =>
-                          setNewKeywords((prev) => ({
-                            ...prev,
-                            [niche.id]: e.target.value,
-                          }))
-                        }
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            handleAddKeyword(niche.id);
-                          }
-                        }}
-                        className="w-full rounded border px-2 py-1 text-xs"
-                      />
+                  {keywordMessage ? (
+                    <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                      {keywordMessage}
                     </div>
-                  )}
-                </div>
-              ))}
-            </div>
+                  ) : null}
+                </>
+              }
+              emptyState={<p className="text-sm text-gray-500">No niches yet.</p>}
+            />
           </div>
         }
       >
@@ -842,21 +867,74 @@ function NichesPageContent() {
               </div>
             </div>
 
-            {loadingVideos ? (
-              <div className="flex flex-col gap-4">
-                {Array.from({ length: 4 }).map((_, index) => (
-                  <VideoCardSkeleton key={index} />
-                ))}
-              </div>
-            ) : videos.length === 0 ? (
-              <div className="text-gray-500">No videos found</div>
-            ) : (
-              <div className="flex flex-col gap-4">
-                {videos.map((video) => (
-                  <VideoCard key={video.id} video={video} />
-                ))}
-              </div>
-            )}
+{!loadingVideos && videoPagination.total > 0 && (
+  <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 pt-4">
+    <div className="text-sm text-gray-500">
+      Showing{" "}
+      <span className="font-medium text-gray-700">
+        {(videoPagination.page - 1) * videoPagination.size + 1}
+      </span>{" "}
+      to{" "}
+      <span className="font-medium text-gray-700">
+        {Math.min(
+          videoPagination.page * videoPagination.size,
+          videoPagination.total
+        )}
+      </span>{" "}
+      of{" "}
+      <span className="font-medium text-gray-700">
+        {videoPagination.total}
+      </span>{" "}
+      videos
+    </div>
+
+    <div className="flex items-center gap-2">
+      <Button
+        variant="secondary"
+        disabled={!videoPagination.has_prev || loadingVideos}
+        onClick={() => {
+          const previousPage = Math.max(
+            1,
+            videoPagination.page - 1
+          );
+
+          updateQueryParams({
+            page: previousPage,
+          });
+        }}
+      >
+        Previous
+      </Button>
+
+      <span className="px-2 text-sm text-gray-600">
+        Page{" "}
+        <span className="font-medium text-gray-900">
+          {videoPagination.page}
+        </span>{" "}
+        of{" "}
+        <span className="font-medium text-gray-900">
+          {videoPagination.pages}
+        </span>
+      </span>
+
+      <Button
+        disabled={!videoPagination.has_next || loadingVideos}
+        onClick={() => {
+          const nextPage = Math.min(
+            videoPagination.pages,
+            videoPagination.page + 1
+          );
+
+          updateQueryParams({
+            page: nextPage,
+          });
+        }}
+      >
+        Next
+      </Button>
+    </div>
+  </div>
+)}
           </>
         )}
       </ProtectedPageShell>

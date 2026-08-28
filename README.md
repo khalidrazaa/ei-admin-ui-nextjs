@@ -1,4 +1,14 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+Admin dashboard for the ExplainIt backend.
+
+## Environment
+
+Copy `.env.example` to `.env.local` and set the local API URL:
+
+```env
+NEXT_PUBLIC_API_URL=http://localhost:8000/v1
+```
+
+For production, set `NEXT_PUBLIC_API_URL` in the build environment (for example, the CI/CD platform's environment-variable settings). It is intentionally public: any variable beginning with `NEXT_PUBLIC_` is embedded in the browser bundle at build time. Never put secrets in it.
 
 ## Getting Started
 

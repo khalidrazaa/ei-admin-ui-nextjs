@@ -15,7 +15,7 @@ import {
   getPopularVideos,
   saveVideoTranscript,
   scanPopularVideos,
-} from "@/lib/services/popular-videos";
+} from "@/lib/services/videos";
 import { VideoDays, VideoSort } from "@/lib/services/scaned-trends";
 import {
   formatCompactNumber,

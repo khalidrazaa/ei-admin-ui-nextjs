@@ -10,7 +10,7 @@ import {
   getPopularScanSettings,
   refreshPopularScanRegions,
   updatePopularScanSettings,
-} from "@/lib/services/popular-videos";
+} from "@/lib/services/videos";
 import {
   createDraftPrompt,
   deleteDraftPrompt,

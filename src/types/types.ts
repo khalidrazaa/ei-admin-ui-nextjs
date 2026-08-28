@@ -224,3 +224,69 @@ export type BaseVideoInsight = {
 export type TrendVideo = BaseVideoInsight;
 
 export type PopularVideo = BaseVideoInsight;
+
+export type VideoSort =
+  |  "score"
+  |  "trend_stage"
+  |  "speed_score"
+  |  "breakout_score"
+  |  "engagement"
+  |  "views"
+  |  "published_at"
+  |  "region"
+  |  "source"
+  |  "category_title"
+  |  "confidence_score"
+
+
+  export type VideoDays = 7 | 30;
+
+  export interface VideosPagination {
+  page: number;
+  size: number;
+  total: number;
+  pages: number;
+  has_next: boolean;
+  has_prev: boolean;
+}
+
+export interface VideosResponse {
+  items: TrendVideo[];
+  pagination: VideosPagination;
+}
+
+export interface GetVideosByNicheParams {
+  sort?: VideoSort;
+  min_views?: number;
+  days?: VideoDays | null;
+  page?: number;
+  size?: number;
+}
+
+export interface ApiVideosResponse {
+  items: TrendVideo[];
+
+  page?: number;
+  size?: number;
+  total?: number;
+  pages?: number;
+  has_next?: boolean;
+  has_prev?: boolean;
+
+  pagination?: {
+    page?: number;
+    size?: number;
+    total?: number;
+    pages?: number;
+    has_next?: boolean;
+    has_prev?: boolean;
+  };
+}
+
+export type PopularVideoFilters = {
+  sort?: VideoSort;
+  min_views?: number;
+  days?: VideoDays | null;
+  region_code?: string;
+  source?: string;
+};
