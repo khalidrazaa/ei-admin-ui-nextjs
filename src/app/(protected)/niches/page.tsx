@@ -8,6 +8,12 @@ import ProtectedPageShell from "@/components/layout/ProtectedPageShell";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import Button from "@/components/ui/Button";
 import Sidebar, { SidebarItem } from "@/components/ui/Sidebar";
+import VideoFilters, {
+  VideoPaginationControls,
+  SortDirection,
+  VideoSortDirections,
+  VIDEO_SORT_OPTIONS,
+} from "@/components/ui/VideoFilters";
 import VideoCard from "@/components/ui/VideoCard";
 import {
   addKeyword,
@@ -19,29 +25,23 @@ import {
   scanNicheYouTube,
   updateNicheStatus,
 } from "@/lib/services/niche";
-import {
-  getVideosByNiche,
-} from "@/lib/services/videos";
+import { getVideosByNiche } from "@/lib/services/videos";
 import {
   formatCompactNumber,
   formatFixedNumber,
 } from "@/lib/utils/formatters";
-import { TrendVideo, VideosPagination, videodays, VideoSort } from "@/types/types";
+import { TrendVideo, VideoDays, VideosPagination, VideoSort } from "@/types/types";
 
-const SORT_OPTIONS: Array<{ value: VideoSort; label: string }> = [
-  { value: "score", label: "Trending Score" },
-  { value: "trending", label: "Trending" },
-  { value: "breakout", label: "Breakout" },
-  { value: "emerging", label: "Emerging" },
-  { value: "sustained_demand", label: "Sustained Demand" },
-  { value: "watchlist", label: "Watchlist" },
-  { value: "vph", label: "Views / Hour" },
-  { value: "breakout_score", label: "Breakout Score" },
-  { value: "engagement", label: "Engagement" },
-  { value: "views", label: "Views" },
-  { value: "recent", label: "Recent" },
-];
 const DAY_OPTIONS: VideoDays[] = [7, 30];
+const PAGE_SIZE = 20;
+const EMPTY_PAGINATION: VideosPagination = {
+  page: 1,
+  size: PAGE_SIZE,
+  total: 0,
+  pages: 1,
+  has_next: false,
+  has_prev: false,
+};
 
 function parseSelectedNiche(value: string | null): number | null {
   if (!value) {
@@ -52,10 +52,23 @@ function parseSelectedNiche(value: string | null): number | null {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
-function parseSort(value: string | null): VideoSort {
-  return SORT_OPTIONS.some((option) => option.value === value)
-    ? (value as VideoSort)
-    : "score";
+function parseSortDirections(value: string | null): VideoSortDirections {
+  if (!value) {
+    return { score: "desc" };
+  }
+
+  const directions: VideoSortDirections = {};
+
+  value.split(",").forEach((sortValue) => {
+    const direction: SortDirection = sortValue.startsWith("-") ? "desc" : "asc";
+    const field = sortValue.replace(/^-/, "") as VideoSort;
+
+    if (VIDEO_SORT_OPTIONS.some((option) => option.value === field)) {
+      directions[field] = direction;
+    }
+  });
+
+  return Object.keys(directions).length > 0 ? directions : { score: "desc" };
 }
 
 function parseDays(value: string | null): VideoDays | null {
@@ -109,9 +122,6 @@ function NichesPageContent() {
   const inputRefs = useRef<{ [key: number]: HTMLInputElement | null }>({});
   const [newNiche, setNewNiche] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<Niche | null>(null);
-  const [selectedNicheId, setSelectedNicheId] = useState<number | null>(
-    parseSelectedNiche(searchParams.get("niche"))
-  );
   const [expandedNiches, setExpandedNiches] = useState<{ [id: number]: boolean }>(
     {}
   );
@@ -120,34 +130,37 @@ function NichesPageContent() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [videos, setVideos] = useState<TrendVideo[]>([]);
   const [loadingVideos, setLoadingVideos] = useState(false);
+  const [videoError, setVideoError] = useState<string | null>(null);
   const [scanningNiche, setScanningNiche] = useState(false);
   const [scanMessage, setScanMessage] = useState<string | null>(null);
   const [scanMessageType, setScanMessageType] = useState<"success" | "error" | null>(
     null
   );
   const [keywordMessage, setKeywordMessage] = useState<string | null>(null);
-  const [sort, setSort] = useState<VideoSort>(parseSort(searchParams.get("sort")));
-  const [minViews, setMinViews] = useState(parseMinViews(searchParams.get("min_views")));
-  const [days, setDays] = useState<VideoDays | "">(
-    parseDays(searchParams.get("days")) ?? ""
-  );
-  const [videoPagination, setVideoPagination] =
-    useState<VideosPagination>({
-      page: 1,
-      size: 20,
-      total: 0,
-      pages: 1,
-      has_next: false,
-      has_prev: false,
-    });
+  const [videoPagination, setVideoPagination] = useState<VideosPagination>(EMPTY_PAGINATION);
+  const [reloadVersion, setReloadVersion] = useState(0);
+
+  const selectedNicheId = parseSelectedNiche(searchParams.get("niche"));
+  const sortQuery = searchParams.get("sort");
+  const sortDirections = useMemo(() => parseSortDirections(sortQuery), [sortQuery]);
+  const minViews = parseMinViews(searchParams.get("min_views"));
+  const days = parseDays(searchParams.get("days")) ?? "";
+  const page = parsePage(searchParams.get("page"));
 
   const videoFilters = useMemo(
     () => ({
-      sort,
+      sort: VIDEO_SORT_OPTIONS
+        .flatMap((option) => {
+          const direction = sortDirections[option.value];
+          return direction ? [`${direction === "desc" ? "-" : ""}${option.value}`] : [];
+        })
+        .join(","),
       min_views: minViews ? Number(minViews) : undefined,
       days: days === "" ? null : days,
+      page,
+      size: PAGE_SIZE,
     }),
-    [days, minViews, sort]
+    [days, minViews, page, sortDirections]
   );
 
   const videoSummary = useMemo(() => {
@@ -190,7 +203,7 @@ function NichesPageContent() {
 
   function updateQueryParams(nextValues: {
     niche?: number | null;
-    sort?: VideoSort;
+    sort?: VideoSortDirections;
     min_views?: string;
     days?: VideoDays | "";
     page?: number;
@@ -206,7 +219,16 @@ function NichesPageContent() {
     }
 
     if (nextValues.sort !== undefined) {
-      params.set("sort", nextValues.sort);
+      const sortValues = VIDEO_SORT_OPTIONS.flatMap((option) => {
+        const direction = nextValues.sort?.[option.value];
+        return direction ? [`${direction === "desc" ? "-" : ""}${option.value}`] : [];
+      });
+
+      if (sortValues.length > 0) {
+        params.set("sort", sortValues.join(","));
+      } else {
+        params.delete("sort");
+      }
     }
 
     if (nextValues.min_views !== undefined) {
@@ -253,8 +275,6 @@ function NichesPageContent() {
       : 1;
   }
 
-  const page = parsePage(searchParams.get("page"));
-
   useEffect(() => {
     async function load() {
       try {
@@ -269,13 +289,6 @@ function NichesPageContent() {
 
     load();
   }, []);
-
-  useEffect(() => {
-    setSelectedNicheId(parseSelectedNiche(searchParams.get("niche")));
-    setSort(parseSort(searchParams.get("sort")));
-    setMinViews(parseMinViews(searchParams.get("min_views")));
-    setDays(parseDays(searchParams.get("days")) ?? "");
-  }, [searchParams]);
 
   const handleMouseDown = () => {
     isResizing.current = true;
@@ -296,14 +309,8 @@ function NichesPageContent() {
   useEffect(() => {
     if (!selectedNicheId) {
       setVideos([]);
-      setVideoPagination({
-        page: 1,
-        size: 20,
-        total: 0,
-        pages: 1,
-        has_next: false,
-        has_prev: false,
-      });
+      setVideoPagination(EMPTY_PAGINATION);
+      setVideoError(null);
       return;
     }
   
@@ -312,33 +319,17 @@ function NichesPageContent() {
     async function loadVideos() {
       try {
         setLoadingVideos(true);
+        setVideoError(null);
       
-        const response = await getVideosByNiche(
-          nicheId,
-          {
-            sort,
-            min_views: minViews
-              ? Number(minViews)
-              : undefined,
-            days: days === "" ? null : days,
-            page,
-            size: 20,
-          }
-        );
+        const response = await getVideosByNiche(nicheId, videoFilters);
       
         setVideos(response.items);
         setVideoPagination(response.pagination);
       } catch (err) {
         console.error("Failed to load videos", err);
         setVideos([]);
-        setVideoPagination({
-          page: 1,
-          size: 20,
-          total: 0,
-          pages: 1,
-          has_next: false,
-          has_prev: false,
-        });
+        setVideoPagination(EMPTY_PAGINATION);
+        setVideoError(err instanceof Error ? err.message : "Unable to load videos for this niche.");
       } finally {
         setLoadingVideos(false);
       }
@@ -347,10 +338,8 @@ function NichesPageContent() {
     loadVideos();
   }, [
     selectedNicheId,
-    sort,
-    minViews,
-    days,
-    page,
+    videoFilters,
+    reloadVersion,
   ]);
 
   useEffect(() => {
@@ -507,7 +496,6 @@ function NichesPageContent() {
       setNiches((prev) => prev.filter((n) => n.id !== deletedNicheId));
 
       if (selectedNicheId === deletedNicheId) {
-        setSelectedNicheId(null);
         setVideos([]);
         updateQueryParams({ niche: null });
       }
@@ -540,16 +528,7 @@ function NichesPageContent() {
         `Scan result ${response.videos_saved} videos saved.`
       );
       setScanMessageType("success");
-      setLoadingVideos(true);
-
-      try {
-        const refreshedVideos = await getVideosByNiche(selectedNicheId, videoFilters);
-        setVideos(refreshedVideos);
-      } catch (refreshErr) {
-        console.error("Failed to refresh videos after scan", refreshErr);
-      } finally {
-        setLoadingVideos(false);
-      }
+      setReloadVersion((version) => version + 1);
     } catch (err) {
       console.error("Failed to scan niche YouTube videos", err);
       setScanMessage(
@@ -571,8 +550,7 @@ function NichesPageContent() {
     isActive: selectedNicheId === niche.id,
     isExpanded: Boolean(expandedNiches[niche.id]),
     onClick: () => {
-      setSelectedNicheId(niche.id);
-      updateQueryParams({ niche: niche.id });
+      updateQueryParams({ niche: niche.id, page: 1 });
       toggleExpand(niche.id);
     },
     actions: (
@@ -736,54 +714,28 @@ function NichesPageContent() {
 
         {selectedNicheId && (
           <>
-            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-              <div className="flex flex-wrap gap-3">
-                <select
-                  value={sort}
-                  onChange={(e) => {
-                    const nextSort = e.target.value as VideoSort;
-                    setSort(nextSort);
-                    updateQueryParams({ sort: nextSort });
-                  }}
-                  className="rounded border px-2 py-1 text-sm"
-                >
-                  {SORT_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-
-                <input
-                  type="number"
-                  min="0"
-                  inputMode="numeric"
-                  placeholder="Min views"
-                  value={minViews}
-                  onChange={(e) => {
-                    const nextValue = e.target.value;
-                    setMinViews(nextValue);
-                    updateQueryParams({ min_views: nextValue });
-                  }}
-                  className="w-32 rounded border px-2 py-1 text-sm"
-                />
-
-                <select
-                  value={days}
-                  onChange={(e) => {
-                    const nextDays = e.target.value
-                      ? (Number(e.target.value) as VideoDays)
-                      : "";
-                    setDays(nextDays);
-                    updateQueryParams({ days: nextDays });
-                  }}
-                  className="rounded border px-2 py-1 text-sm"
-                >
-                  <option value="">All time</option>
-                  <option value="7">Last 7 days</option>
-                  <option value="30">Last 30 days</option>
-                </select>
-              </div>
+            <div className="sticky top-0 z-20 -mx-4 mb-4 flex flex-wrap items-end justify-between gap-3 border-b border-gray-200 bg-gray-50/95 px-4 py-3 backdrop-blur">
+              <VideoFilters
+                sortDirections={sortDirections}
+                minViews={minViews}
+                days={days}
+                onChange={(filters) =>
+                  updateQueryParams({
+                    sort: filters.sortDirections,
+                    min_views: filters.minViews,
+                    days: filters.days,
+                    page: 1,
+                  })
+                }
+                onReset={() =>
+                  updateQueryParams({
+                    sort: { score: "desc" },
+                    min_views: "",
+                    days: "",
+                    page: 1,
+                  })
+                }
+              />
 
               <div className="flex max-w-md justify-end gap-3">
 
@@ -867,74 +819,27 @@ function NichesPageContent() {
               </div>
             </div>
 
-{!loadingVideos && videoPagination.total > 0 && (
-  <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 pt-4">
-    <div className="text-sm text-gray-500">
-      Showing{" "}
-      <span className="font-medium text-gray-700">
-        {(videoPagination.page - 1) * videoPagination.size + 1}
-      </span>{" "}
-      to{" "}
-      <span className="font-medium text-gray-700">
-        {Math.min(
-          videoPagination.page * videoPagination.size,
-          videoPagination.total
-        )}
-      </span>{" "}
-      of{" "}
-      <span className="font-medium text-gray-700">
-        {videoPagination.total}
-      </span>{" "}
-      videos
-    </div>
+            <div className="space-y-4 pb-20">
+              {loadingVideos ? (
+                Array.from({ length: 3 }, (_, index) => <VideoCardSkeleton key={index} />)
+              ) : videoError ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                  {videoError}
+                </div>
+              ) : videos.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center text-sm text-gray-500">
+                  No videos match the selected niche and filters.
+                </div>
+              ) : (
+                videos.map((video) => <VideoCard key={video.id} video={video} />)
+              )}
+            </div>
 
-    <div className="flex items-center gap-2">
-      <Button
-        variant="secondary"
-        disabled={!videoPagination.has_prev || loadingVideos}
-        onClick={() => {
-          const previousPage = Math.max(
-            1,
-            videoPagination.page - 1
-          );
-
-          updateQueryParams({
-            page: previousPage,
-          });
-        }}
-      >
-        Previous
-      </Button>
-
-      <span className="px-2 text-sm text-gray-600">
-        Page{" "}
-        <span className="font-medium text-gray-900">
-          {videoPagination.page}
-        </span>{" "}
-        of{" "}
-        <span className="font-medium text-gray-900">
-          {videoPagination.pages}
-        </span>
-      </span>
-
-      <Button
-        disabled={!videoPagination.has_next || loadingVideos}
-        onClick={() => {
-          const nextPage = Math.min(
-            videoPagination.pages,
-            videoPagination.page + 1
-          );
-
-          updateQueryParams({
-            page: nextPage,
-          });
-        }}
-      >
-        Next
-      </Button>
-    </div>
-  </div>
-)}
+            <VideoPaginationControls
+              pagination={videoPagination}
+              disabled={loadingVideos}
+              onPageChange={(nextPage) => updateQueryParams({ page: nextPage })}
+            />
           </>
         )}
       </ProtectedPageShell>

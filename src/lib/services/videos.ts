@@ -184,7 +184,9 @@ export async function getVideosByNiche(
 
   const pages =
     pagination?.pages ??
+    pagination?.total_pages ??
     response.pages ??
+    response.total_pages ??
     Math.max(1, Math.ceil(total / size));
 
   const hasNext =
@@ -194,7 +196,9 @@ export async function getVideosByNiche(
 
   const hasPrev =
     pagination?.has_prev ??
+    pagination?.has_previous ??
     response.has_prev ??
+    response.has_previous ??
     page > 1;
 
   return {
