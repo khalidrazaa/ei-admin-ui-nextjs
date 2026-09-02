@@ -240,6 +240,17 @@ export type VideoSort =
 
 
   export type VideoDays = 7 | 30;
+export type PublishedAge =
+  | "6h"
+  | "12h"
+  | "24h"
+  | "2d"
+  | "3d"
+  | "4d"
+  | "5d"
+  | "6d"
+  | "7d"
+  | "7d+";
 
 export interface VideosPagination {
   page: number;
@@ -256,11 +267,25 @@ export interface VideosResponse {
 }
 
 export interface GetVideosByNicheParams {
+  min_views?: number;
+  published_age?: PublishedAge;
+  trend_stage?: VideoTrendStage[];
+  region_code?: string[];
+  source?: string[];
+  category_title?: string[];
+  min_score?: number;
+  min_speed_score?: number;
+  min_breakout_score?: number;
+  min_engagement_score?: number;
+  min_confidence_score?: number;
+  page?: number;
+  size?: number;
+}
+
+export interface GetVideosByKeywordParams {
   sort?: string;
   min_views?: number;
   days?: VideoDays | null;
-  page?: number;
-  size?: number;
 }
 
 export interface ApiVideosResponse {

@@ -10,9 +10,7 @@ import Button from "@/components/ui/Button";
 import Sidebar, { SidebarItem } from "@/components/ui/Sidebar";
 import VideoFilters, {
   VideoPaginationControls,
-  SortDirection,
-  VideoSortDirections,
-  VIDEO_SORT_OPTIONS,
+  VideoFilterValues,
 } from "@/components/ui/VideoFilters";
 import VideoCard from "@/components/ui/VideoCard";
 import {
@@ -30,9 +28,23 @@ import {
   formatCompactNumber,
   formatFixedNumber,
 } from "@/lib/utils/formatters";
-import { TrendVideo, VideoDays, VideosPagination, VideoSort } from "@/types/types";
+import {
+  TrendVideo,
+  PublishedAge,
+  VideosPagination,
+  VideoTrendStage,
+} from "@/types/types";
 
-const DAY_OPTIONS: VideoDays[] = [7, 30];
+const PUBLISHED_AGES: PublishedAge[] = [
+  "6h", "12h", "24h", "2d", "3d", "4d", "5d", "6d", "7d", "7d+",
+];
+const TREND_STAGES: VideoTrendStage[] = [
+  "watchlist",
+  "emerging",
+  "breakout",
+  "trending",
+  "sustained_demand",
+];
 const PAGE_SIZE = 20;
 const EMPTY_PAGINATION: VideosPagination = {
   page: 1,
@@ -52,34 +64,10 @@ function parseSelectedNiche(value: string | null): number | null {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
-function parseSortDirections(value: string | null): VideoSortDirections {
-  if (!value) {
-    return { score: "desc" };
-  }
-
-  const directions: VideoSortDirections = {};
-
-  value.split(",").forEach((sortValue) => {
-    const direction: SortDirection = sortValue.startsWith("-") ? "desc" : "asc";
-    const field = sortValue.replace(/^-/, "") as VideoSort;
-
-    if (VIDEO_SORT_OPTIONS.some((option) => option.value === field)) {
-      directions[field] = direction;
-    }
-  });
-
-  return Object.keys(directions).length > 0 ? directions : { score: "desc" };
-}
-
-function parseDays(value: string | null): VideoDays | null {
-  if (!value) {
-    return null;
-  }
-
-  const parsed = Number(value);
-  return DAY_OPTIONS.includes(parsed as VideoDays)
-    ? (parsed as VideoDays)
-    : null;
+function parsePublishedAge(value: string | null): PublishedAge | "" {
+  return value && PUBLISHED_AGES.includes(value as PublishedAge)
+    ? (value as PublishedAge)
+    : "";
 }
 
 function parseMinViews(value: string | null): string {
@@ -89,6 +77,26 @@ function parseMinViews(value: string | null): string {
 
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= 0 ? String(parsed) : "";
+}
+
+function parseNonNegativeNumber(value: string | null): string {
+  if (value === null || value === "") return "";
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? String(parsed) : "";
+}
+
+function parseTrendStage(value: string | null): VideoTrendStage | "" {
+  return value && TREND_STAGES.includes(value as VideoTrendStage)
+    ? (value as VideoTrendStage)
+    : "";
+}
+
+function parsePage(value: string | null): number {
+  if (!value) return 1;
+
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 1;
 }
 
 function VideoCardSkeleton() {
@@ -126,6 +134,7 @@ function NichesPageContent() {
     {}
   );
   const [leftWidth, setLeftWidth] = useState(320);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const isResizing = useRef(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [videos, setVideos] = useState<TrendVideo[]>([]);
@@ -141,26 +150,49 @@ function NichesPageContent() {
   const [reloadVersion, setReloadVersion] = useState(0);
 
   const selectedNicheId = parseSelectedNiche(searchParams.get("niche"));
-  const sortQuery = searchParams.get("sort");
-  const sortDirections = useMemo(() => parseSortDirections(sortQuery), [sortQuery]);
   const minViews = parseMinViews(searchParams.get("min_views"));
-  const days = parseDays(searchParams.get("days")) ?? "";
+  const publishedAge = parsePublishedAge(searchParams.get("published_age"));
+  const trendStage = parseTrendStage(searchParams.get("trend_stage"));
+  const regionCode = searchParams.get("region_code") ?? "";
+  const source = searchParams.get("source") || "NICHE";
+  const categoryTitle = searchParams.get("category_title") ?? "";
+  const minScore = parseNonNegativeNumber(searchParams.get("min_score"));
+  const minSpeedScore = parseNonNegativeNumber(searchParams.get("min_speed_score"));
+  const minBreakoutScore = parseNonNegativeNumber(searchParams.get("min_breakout_score"));
+  const minEngagementScore = parseNonNegativeNumber(searchParams.get("min_engagement_score"));
+  const minConfidenceScore = parseNonNegativeNumber(searchParams.get("min_confidence_score"));
   const page = parsePage(searchParams.get("page"));
 
   const videoFilters = useMemo(
     () => ({
-      sort: VIDEO_SORT_OPTIONS
-        .flatMap((option) => {
-          const direction = sortDirections[option.value];
-          return direction ? [`${direction === "desc" ? "-" : ""}${option.value}`] : [];
-        })
-        .join(","),
       min_views: minViews ? Number(minViews) : undefined,
-      days: days === "" ? null : days,
+      published_age: publishedAge || undefined,
+      trend_stage: trendStage ? [trendStage] : [],
+      region_code: regionCode ? [regionCode] : [],
+      source: source ? [source] : [],
+      category_title: categoryTitle ? [categoryTitle] : [],
+      min_score: minScore ? Number(minScore) : undefined,
+      min_speed_score: minSpeedScore ? Number(minSpeedScore) : undefined,
+      min_breakout_score: minBreakoutScore ? Number(minBreakoutScore) : undefined,
+      min_engagement_score: minEngagementScore ? Number(minEngagementScore) : undefined,
+      min_confidence_score: minConfidenceScore ? Number(minConfidenceScore) : undefined,
       page,
       size: PAGE_SIZE,
     }),
-    [days, minViews, page, sortDirections]
+    [
+      categoryTitle,
+      publishedAge,
+      minBreakoutScore,
+      minConfidenceScore,
+      minEngagementScore,
+      minScore,
+      minSpeedScore,
+      minViews,
+      page,
+      regionCode,
+      source,
+      trendStage,
+    ]
   );
 
   const videoSummary = useMemo(() => {
@@ -203,11 +235,9 @@ function NichesPageContent() {
 
   function updateQueryParams(nextValues: {
     niche?: number | null;
-    sort?: VideoSortDirections;
     min_views?: string;
-    days?: VideoDays | "";
     page?: number;
-  }) {
+  } & Partial<VideoFilterValues>) {
     const params = new URLSearchParams(searchParams.toString());
 
     if (nextValues.niche !== undefined) {
@@ -215,19 +245,6 @@ function NichesPageContent() {
         params.delete("niche");
       } else {
         params.set("niche", String(nextValues.niche));
-      }
-    }
-
-    if (nextValues.sort !== undefined) {
-      const sortValues = VIDEO_SORT_OPTIONS.flatMap((option) => {
-        const direction = nextValues.sort?.[option.value];
-        return direction ? [`${direction === "desc" ? "-" : ""}${option.value}`] : [];
-      });
-
-      if (sortValues.length > 0) {
-        params.set("sort", sortValues.join(","));
-      } else {
-        params.delete("sort");
       }
     }
 
@@ -239,13 +256,32 @@ function NichesPageContent() {
       }
     }
 
-    if (nextValues.days !== undefined) {
-      if (nextValues.days === "") {
-        params.delete("days");
+    if (nextValues.publishedAge !== undefined) {
+      if (nextValues.publishedAge === "") {
+        params.delete("published_age");
       } else {
-        params.set("days", String(nextValues.days));
+        params.set("published_age", nextValues.publishedAge);
       }
     }
+
+    const textFilters = {
+      trend_stage: nextValues.trendStage,
+      region_code: nextValues.regionCode,
+      source: nextValues.source,
+      category_title: nextValues.categoryTitle,
+      min_score: nextValues.minScore,
+      min_speed_score: nextValues.minSpeedScore,
+      min_breakout_score: nextValues.minBreakoutScore,
+      min_engagement_score: nextValues.minEngagementScore,
+      min_confidence_score: nextValues.minConfidenceScore,
+    };
+
+    Object.entries(textFilters).forEach(([name, value]) => {
+      if (value === undefined) return;
+      const normalized = value.trim();
+      if (normalized) params.set(name, normalized);
+      else params.delete(name);
+    });
 
     if (nextValues.page !== undefined) {
       if (nextValues.page <= 1) {
@@ -261,18 +297,6 @@ function NichesPageContent() {
       queryString ? `${pathname}?${queryString}` : pathname,
       { scroll: false }
     );
-  }
-
-  function parsePage(value: string | null): number {
-    if (!value) {
-      return 1;
-    }
-
-    const parsed = Number(value);
-
-    return Number.isInteger(parsed) && parsed > 0
-      ? parsed
-      : 1;
   }
 
   useEffect(() => {
@@ -291,6 +315,7 @@ function NichesPageContent() {
   }, []);
 
   const handleMouseDown = () => {
+    if (isSidebarCollapsed) return;
     isResizing.current = true;
   };
 
@@ -654,6 +679,8 @@ function NichesPageContent() {
         description="Manage niche keywords and review scanned video opportunities."
         sidebarClassName="pr-2"
         sidebarStyle={{ width: leftWidth }}
+        sidebarCollapsed={isSidebarCollapsed}
+        onSidebarToggle={() => setIsSidebarCollapsed((collapsed) => !collapsed)}
         sidebarAfter={
           <div
             onMouseDown={handleMouseDown}
@@ -716,22 +743,46 @@ function NichesPageContent() {
           <>
             <div className="sticky top-0 z-20 -mx-4 mb-4 flex flex-wrap items-end justify-between gap-3 border-b border-gray-200 bg-gray-50/95 px-4 py-3 backdrop-blur">
               <VideoFilters
-                sortDirections={sortDirections}
                 minViews={minViews}
-                days={days}
+                publishedAge={publishedAge}
+                trendStage={trendStage}
+                regionCode={regionCode}
+                source={source}
+                categoryTitle={categoryTitle}
+                minScore={minScore}
+                minSpeedScore={minSpeedScore}
+                minBreakoutScore={minBreakoutScore}
+                minEngagementScore={minEngagementScore}
+                minConfidenceScore={minConfidenceScore}
                 onChange={(filters) =>
                   updateQueryParams({
-                    sort: filters.sortDirections,
                     min_views: filters.minViews,
-                    days: filters.days,
+                    publishedAge: filters.publishedAge,
+                    trendStage: filters.trendStage,
+                    regionCode: filters.regionCode,
+                    source: filters.source,
+                    categoryTitle: filters.categoryTitle,
+                    minScore: filters.minScore,
+                    minSpeedScore: filters.minSpeedScore,
+                    minBreakoutScore: filters.minBreakoutScore,
+                    minEngagementScore: filters.minEngagementScore,
+                    minConfidenceScore: filters.minConfidenceScore,
                     page: 1,
                   })
                 }
                 onReset={() =>
                   updateQueryParams({
-                    sort: { score: "desc" },
                     min_views: "",
-                    days: "",
+                    publishedAge: "",
+                    trendStage: "",
+                    regionCode: "",
+                    source: "NICHE",
+                    categoryTitle: "",
+                    minScore: "",
+                    minSpeedScore: "",
+                    minBreakoutScore: "",
+                    minEngagementScore: "",
+                    minConfidenceScore: "",
                     page: 1,
                   })
                 }
