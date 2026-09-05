@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { CSSProperties, ReactNode } from "react";
+import { CSSProperties, ReactNode, useId, useState } from "react";
 import { PanelLeftClose, PanelLeftOpen, Settings } from "lucide-react";
 
 type ProtectedPageShellProps = {
@@ -28,17 +28,29 @@ export default function ProtectedPageShell({
   sidebarStyle,
   contentClassName = "flex-1 overflow-y-auto p-4",
   sidebarAfter,
-  sidebarCollapsed = false,
+  sidebarCollapsed: controlledSidebarCollapsed,
   onSidebarToggle,
   settingsHref = "/settings?tab=youtube-popular",
 }: ProtectedPageShellProps) {
   const pathname = usePathname();
+  const sidebarId = useId();
+  const [internalSidebarCollapsed, setInternalSidebarCollapsed] = useState(false);
+  const sidebarCollapsed = controlledSidebarCollapsed ?? internalSidebarCollapsed;
+
+  function toggleSidebar() {
+    if (controlledSidebarCollapsed === undefined) {
+      setInternalSidebarCollapsed((collapsed) => !collapsed);
+    }
+    onSidebarToggle?.();
+  }
+
   const isSettingsActive = pathname === "/settings";
 
   return (
     <div className="flex h-[calc(100vh-56px)] overflow-hidden bg-gray-50">
       <aside
-        style={sidebarCollapsed ? { width: 0 } : sidebarStyle}
+        id={sidebarId}
+        style={sidebarCollapsed ? { width: 0, visibility: "hidden" } : sidebarStyle}
         aria-hidden={sidebarCollapsed}
         className={`flex shrink-0 flex-col overflow-hidden bg-white transition-[width,padding] duration-200 ${
           sidebarCollapsed ? "border-r-0 p-0" : "border-r border-gray-200 p-4"
@@ -69,10 +81,11 @@ export default function ProtectedPageShell({
         </div>
       </aside>
 
-      {onSidebarToggle ? (
         <button
           type="button"
-          onClick={onSidebarToggle}
+          onClick={toggleSidebar}
+          aria-controls={sidebarId}
+          aria-expanded={!sidebarCollapsed}
           aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           className="z-20 flex w-6 shrink-0 items-center justify-center border-r border-gray-200 bg-white text-gray-500 transition hover:bg-gray-100 hover:text-gray-900"
@@ -83,7 +96,6 @@ export default function ProtectedPageShell({
             <PanelLeftClose className="h-4 w-4" aria-hidden="true" />
           )}
         </button>
-      ) : null}
 
       {!sidebarCollapsed ? sidebarAfter : null}
 

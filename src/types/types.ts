@@ -273,7 +273,7 @@ export interface VideosResponse {
   pagination: VideosPagination;
 }
 
-export interface GetVideosByNicheParams {
+export interface VideoListParams {
   min_views?: number;
   published_age?: PublishedAge;
   published_from?: string;
@@ -290,6 +290,8 @@ export interface GetVideosByNicheParams {
   page?: number;
   size?: number;
 }
+
+export type GetVideosByNicheParams = VideoListParams;
 
 export interface GetVideosByKeywordParams {
   sort?: string;
@@ -321,10 +323,4 @@ export interface ApiVideosResponse {
   };
 }
 
-export type PopularVideoFilters = {
-  sort?: VideoSort;
-  min_views?: number;
-  days?: VideoDays | null;
-  region_code?: string;
-  source?: string;
-};
+export type PopularVideoFilters = VideoListParams;

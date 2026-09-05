@@ -1,3 +1,7 @@
+"use client";
+
+import { useState } from "react";
+import VideoTranscriptAction from "./VideoTranscriptAction";
 import type { ReactNode } from "react";
 
 import { PopularVideo, TrendVideo, VideoTrendStage } from "@/types/types";
@@ -11,6 +15,7 @@ import {
 
 type Props = {
   video: TrendVideo | PopularVideo;
+  onVideoUpdated?: (video: PopularVideo) => void;
   sidebarActions?: ReactNode;
   sidebarMessage?: ReactNode;
 };
@@ -58,7 +63,9 @@ function MetricChip({
   );
 }
 
-export default function VideoCard({ video, sidebarActions, sidebarMessage }: Props) {
+export default function VideoCard({ video: initialVideo, onVideoUpdated, sidebarActions, sidebarMessage }: Props) {
+  const [savedVideo, setSavedVideo] = useState<{ original: typeof initialVideo; updated: PopularVideo } | null>(null);
+  const video = savedVideo?.original === initialVideo ? savedVideo.updated : initialVideo;
   const trendStage = video.trend_stage ?? "watchlist";
   const stageTone = stageStyles[trendStage as VideoTrendStage] ?? stageStyles.watchlist;
 
@@ -79,6 +86,10 @@ export default function VideoCard({ video, sidebarActions, sidebarMessage }: Pro
             />
           </a>
 
+          <VideoTranscriptAction video={video} onVideoUpdated={(updated) => {
+            setSavedVideo({ original: initialVideo, updated });
+            onVideoUpdated?.(updated);
+          }} />
           {sidebarActions && <div className="flex flex-col gap-2">{sidebarActions}</div>}
           {sidebarMessage}
         </div>

@@ -18,7 +18,7 @@ const SCORE_OPTIONS = [2.5, 5, 7.5, 9];
 const VIEW_OPTIONS = [1000, 10000, 100000, 1000000];
 const REGION_OPTIONS = ["IN", "US", "GB", "CA", "AU"];
 const SOURCE_OPTIONS = ["NICHE", "POPULAR", "MANUAL"];
-const CATEGORY_OPTIONS = [
+export const CATEGORY_OPTIONS = [
   "Autos & Vehicles",
   "Comedy",
   "Education",

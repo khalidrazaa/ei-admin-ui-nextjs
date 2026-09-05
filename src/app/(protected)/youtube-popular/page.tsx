@@ -5,49 +5,22 @@ import { useEffect, useMemo, useState } from "react";
 import Button from "@/components/ui/Button";
 import ProtectedPageShell from "@/components/layout/ProtectedPageShell";
 import Toast from "@/components/ui/Toast";
-import TranscriptModal from "@/components/ui/TranscriptModal";
+import Sidebar from "@/components/ui/Sidebar";
+import VideoFilters, { CATEGORY_OPTIONS, VideoFilterValues, VideoPaginationControls } from "@/components/ui/VideoFilters";
+import { EMPTY_VIDEO_FILTERS, toVideoListParams } from "@/lib/utils/videoFilters";
 import VideoCard from "@/components/ui/VideoCard";
 import {
-  getPopularScanRegions,
-  generateDraftArticle,
   getPopularScanSettings,
-  getVideoTranscript,
   getPopularVideos,
-  saveVideoTranscript,
   scanPopularVideos,
 } from "@/lib/services/videos";
-import { VideoDays, VideoSort } from "@/types/types";
-import {
-  formatCompactNumber,
-  formatFixedNumber,
-} from "@/lib/utils/formatters";
+import { VideosPagination } from "@/types/types";
 import {
   PopularScanSettings,
   PopularVideo,
-  YouTubeRegion,
-  VideoTranscript,
 } from "@/types/types";
 
-const SORT_OPTIONS: Array<{ value: VideoSort; label: string }> = [
-  { value: "score", label: "Trending Score" },
-  { value: "trending", label: "Trending" },
-  { value: "breakout", label: "Breakout" },
-  { value: "emerging", label: "Emerging" },
-  { value: "sustained_demand", label: "Sustained Demand" },
-  { value: "watchlist", label: "Watchlist" },
-  { value: "vph", label: "Views / Hour" },
-  { value: "breakout_score", label: "Breakout Score" },
-  { value: "engagement", label: "Engagement" },
-  { value: "views", label: "Views" },
-  { value: "recent", label: "Recent" },
-];
-const DAY_OPTIONS: VideoDays[] = [7, 30];
 const ALL_CATEGORIES = "all";
-const SOURCE_OPTIONS = [
-  { label: "All Videos", value: "all" },
-  { label: "Popular", value: "POPULAR" },
-  { label: "Niche", value: "NICHE" },
-];
 const DEFAULT_SCAN_SETTINGS: PopularScanSettings = {
   region_codes: ["US"],
   max_results: 10,
@@ -79,129 +52,28 @@ export default function YoutubePopularPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [messageType, setMessageType] = useState<"success" | "error" | "info" | null>(null);
   const [scanSettings, setScanSettings] = useState<PopularScanSettings>(DEFAULT_SCAN_SETTINGS);
-  const [availableRegions, setAvailableRegions] = useState<YouTubeRegion[]>([]);
   const [settingsLoading, setSettingsLoading] = useState(true);
-  const [transcriptReadLoadingId, setTranscriptReadLoadingId] = useState<number | null>(null);
-  const [transcriptLoading, setTranscriptLoading] = useState(false);
-  const [transcriptSaving, setTranscriptSaving] = useState(false);
-  const [draftLoadingId, setDraftLoadingId] = useState<number | null>(null);
-  const [activeTranscript, setActiveTranscript] = useState<VideoTranscript | null>(null);
-  const [transcriptOpen, setTranscriptOpen] = useState(false);
-  const [sort, setSort] = useState<VideoSort>("score");
-  const [minViews, setMinViews] = useState("");
-  const [days, setDays] = useState<VideoDays | "">("");
-  const [regionCode, setRegionCode] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState(ALL_CATEGORIES);
-  const [sourceType, setSourceType] = useState("");
-
+  const [filterValues, setFilterValues] = useState<VideoFilterValues>(EMPTY_VIDEO_FILTERS);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [reloadVersion, setReloadVersion] = useState(0);
+  const [pagination, setPagination] = useState<VideosPagination>({
+    page: 1, size: 20, total: 0, pages: 1, has_prev: false, has_next: false,
+  });
   const filters = useMemo(
-    () => ({
-      sort,
-      min_views: minViews ? Number(minViews) : undefined,
-      days: days === "" ? null : days,
-      region_code: regionCode || undefined,
-      source: sourceType === "all" ? undefined : sourceType || undefined,
-    }),
-    [days, minViews, regionCode, sort, sourceType]
+    () => toVideoListParams(filterValues, page, pageSize),
+    [filterValues, page, pageSize]
   );
+  function changeFilters(changes: Partial<VideoFilterValues>) {
+    setFilterValues((current) => ({ ...current, ...changes }));
+    setPage(1);
+  }
 
-  const regionOptions = useMemo(
-    () => {
-      const labels = new Map<string, string>();
-
-      availableRegions.forEach((region) => {
-        if (region.code) {
-          labels.set(region.code, `${region.name} (${region.code})`);
-        }
-      });
-
-      scanSettings.region_codes.forEach((code) => {
-        if (code && !labels.has(code)) {
-          labels.set(code, code);
-        }
-      });
-
-      videos.forEach((video) => {
-        if (video.region_code && !labels.has(video.region_code)) {
-          labels.set(video.region_code, video.region_code);
-        }
-      });
-
-      return [
-        { label: "All Regions", value: "" },
-        ...Array.from(labels.entries())
-          .sort()
-          .map(([code, label]) => ({
-            label,
-            value: code,
-          })),
-      ];
-    },
-    [availableRegions, scanSettings.region_codes, videos]
-  );
-
-  const categories = useMemo(() => {
-    const counts = new Map<string, number>();
-
-    videos.forEach((video) => {
-      const key = video.category_title || "uncategorized";
-      counts.set(key, (counts.get(key) ?? 0) + 1);
-    });
-
-    return [
-      {
-        key: ALL_CATEGORIES,
-        label: "All Categories",
-        count: videos.length,
-      },
-      ...Array.from(counts.entries())
-        .sort((a, b) => b[1] - a[1])
-        .map(([key, count]) => ({
-          key,
-          label: key,
-          count,
-        })),
-    ];
-  }, [videos]);
-
-  const visibleVideos = useMemo(() => {
-    if (selectedCategory === ALL_CATEGORIES) {
-      return videos;
-    }
-
-    return videos.filter(
-      (video) => (video.category_title || "uncategorized") === selectedCategory
-    );
-  }, [selectedCategory, videos]);
-
-  const summary = useMemo(() => {
-    const stageCounts = {
-      trending: 0,
-      breakout: 0,
-      emerging: 0,
-      watchlist: 0,
-    };
-
-    let totalScore = 0;
-    let totalViewsPerHour = 0;
-
-    visibleVideos.forEach((video) => {
-      totalScore += video.virality_score;
-      totalViewsPerHour += video.views_per_hour;
-
-      if (video.trend_stage === "trending") stageCounts.trending += 1;
-      else if (video.trend_stage === "breakout") stageCounts.breakout += 1;
-      else if (video.trend_stage === "emerging") stageCounts.emerging += 1;
-      else stageCounts.watchlist += 1;
-    });
-
-    return {
-      total: visibleVideos.length,
-      avgScore: visibleVideos.length ? totalScore / visibleVideos.length : 0,
-      avgViewsPerHour: visibleVideos.length ? totalViewsPerHour / visibleVideos.length : 0,
-      ...stageCounts,
-    };
-  }, [visibleVideos]);
+  const categories = [
+    { key: ALL_CATEGORIES, label: "All Categories" },
+    ...Array.from(new Set([...CATEGORY_OPTIONS, ...videos.map((video) => video.category_title).filter((value): value is string => Boolean(value)), filterValues.categoryTitle].filter(Boolean)))
+      .sort().map((value) => ({ key: value, label: value })),
+  ];
 
   useEffect(() => {
     if (!message || messageType === null) {
@@ -217,22 +89,30 @@ export default function YoutubePopularPage() {
   }, [message, messageType]);
 
   useEffect(() => {
+    let cancelled = false;
     async function loadVideos() {
       try {
         setLoading(true);
         const data = await getPopularVideos(filters);
-        setVideos(data);
+        if (cancelled) return;
+        setVideos(data.items);
+        setPagination(data.pagination);
+        if (data.pagination.pages > 0 && page > data.pagination.pages) setPage(data.pagination.pages);
       } catch (err) {
+        if (cancelled) return;
+        setVideos([]);
+        setPagination((current) => ({ ...current, total: 0, has_next: false, has_prev: false }));
         console.error("Failed to load popular videos", err);
         setMessage("Failed to load popular videos");
         setMessageType("error");
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
 
-    loadVideos();
-  }, [filters]);
+    void loadVideos();
+    return () => { cancelled = true; };
+  }, [filters, page, reloadVersion]);
 
   useEffect(() => {
     async function loadPopularScanConfig() {
@@ -244,12 +124,6 @@ export default function YoutubePopularPage() {
           max_results: settings.max_results,
         });
 
-        const regions = settings.available_regions ?? (await getPopularScanRegions());
-        setAvailableRegions(regions);
-
-        if (settings.region_codes.length > 0) {
-          setRegionCode((current) => current || settings.region_codes[0]);
-        }
       } catch (err) {
         console.error("Failed to load popular scan settings", err);
         setMessage("Failed to load popular scan settings");
@@ -262,20 +136,6 @@ export default function YoutubePopularPage() {
     void loadPopularScanConfig();
   }, []);
 
-  useEffect(() => {
-    if (selectedCategory === ALL_CATEGORIES) {
-      return;
-    }
-
-    const exists = videos.some(
-      (video) => (video.category_title || "uncategorized") === selectedCategory
-    );
-
-    if (!exists) {
-      setSelectedCategory(ALL_CATEGORIES);
-    }
-  }, [selectedCategory, videos]);
-
   async function handleScanNow() {
     try {
       setScanning(true);
@@ -283,8 +143,7 @@ export default function YoutubePopularPage() {
       setMessageType("info");
 
       const result = await scanPopularVideos(scanSettings);
-      const refreshed = await getPopularVideos(filters);
-      setVideos(refreshed);
+      setReloadVersion((version) => version + 1);
       const regionSummary =
         result.regions.length <= 4
           ? result.regions.join(", ")
@@ -303,199 +162,27 @@ export default function YoutubePopularPage() {
     }
   }
 
-  async function handleOpenTranscript(video: PopularVideo) {
-    setActiveTranscript({
-      id: video.id,
-      title: video.title,
-      youtube_video_id: video.youtube_video_id,
-      transcript_text: "",
-      transcript_language: video.transcript_language,
-      transcript_source: video.transcript_source,
-      transcript_fetched_at: video.transcript_fetched_at,
-    });
-    setTranscriptOpen(true);
-
-    if (!video.has_transcript) {
-      setTranscriptLoading(false);
-      return;
-    }
-
-    try {
-      setTranscriptReadLoadingId(video.id);
-      setTranscriptLoading(true);
-      setMessage("Loading transcript...");
-      setMessageType("info");
-
-      const transcript = await getVideoTranscript(video.id);
-      setActiveTranscript(transcript);
-      setMessage(null);
-      setMessageType(null);
-    } catch (err) {
-      console.error("Failed to load transcript", err);
-      setMessage(
-        err instanceof Error ? err.message : "Failed to load transcript"
-      );
-      setMessageType("error");
-    } finally {
-      setTranscriptLoading(false);
-      setTranscriptReadLoadingId(null);
-    }
-  }
-
-  async function handleSaveTranscript(transcriptText: string) {
-    if (!activeTranscript) {
-      return;
-    }
-
-    try {
-      setTranscriptSaving(true);
-      setMessage("Saving transcript...");
-      setMessageType("info");
-
-      const updatedVideo = await saveVideoTranscript(activeTranscript.id, transcriptText);
-      setVideos((current) =>
-        current.map((video) => (video.id === updatedVideo.id ? updatedVideo : video))
-      );
-      setActiveTranscript((current) =>
-        current
-          ? {
-              ...current,
-              transcript_text: transcriptText.trim(),
-              transcript_language: updatedVideo.transcript_language,
-              transcript_source: updatedVideo.transcript_source,
-              transcript_fetched_at: updatedVideo.transcript_fetched_at,
-            }
-          : current
-      );
-      setMessage("Transcript saved.");
-      setMessageType("success");
-    } catch (err) {
-      console.error("Failed to save transcript", err);
-      setMessage(
-        err instanceof Error ? err.message : "Failed to save transcript"
-      );
-      setMessageType("error");
-    } finally {
-      setTranscriptSaving(false);
-    }
-  }
-
-  async function handleGenerateDraft(videoId: number) {
-    try {
-      setDraftLoadingId(videoId);
-      setMessage("Sending transcript to Gemini and saving a draft article...");
-      setMessageType("info");
-
-      const article = await generateDraftArticle(videoId);
-      setMessage(`Draft article saved: ${article.title}`);
-      setMessageType("success");
-    } catch (err) {
-      console.error("Failed to generate draft article", err);
-      setMessage(
-        err instanceof Error ? err.message : "Failed to generate draft article"
-      );
-      setMessageType("error");
-    } finally {
-      setDraftLoadingId(null);
-    }
-  }
 
   return (
     <ProtectedPageShell
       title="Youtube Popular"
       description="Browse popular videos by category."
+      contentClassName="flex-1 overflow-y-auto px-4"
       sidebar={
-        <div className="space-y-2">
-          {categories.map((category) => {
-            const isActive = selectedCategory === category.key;
-
-            return (
-              <button
-                key={category.key}
-                onClick={() => setSelectedCategory(category.key)}
-                className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition ${
-                  isActive
-                    ? "bg-blue-600 text-white"
-                    : "bg-gray-50 text-gray-700 hover:bg-gray-100"
-                }`}
-              >
-                <span className="truncate">{category.label}</span>
-                <span
-                  className={`rounded-full px-2 py-0.5 text-xs ${
-                    isActive ? "bg-blue-500 text-white" : "bg-white text-gray-500"
-                  }`}
-                >
-                  {category.count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+        <Sidebar items={categories.map((category) => ({
+          id: category.key,
+          label: category.label,
+          isActive: (filterValues.categoryTitle || ALL_CATEGORIES) === category.key,
+          onClick: () => changeFilters({ categoryTitle: category.key === ALL_CATEGORIES ? "" : category.key }),
+        }))} />
       }
     >
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <select
-              value={sourceType}
-              onChange={(e) => setSourceType(e.target.value)}
-              className="rounded border px-2 py-1 text-sm"
-            >
-              {SOURCE_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-
-            <select
-              value={regionCode}
-              onChange={(e) => setRegionCode(e.target.value)}
-              className="rounded border px-2 py-1 text-sm"
-            >
-              {regionOptions.map((option) => (
-                <option key={option.label} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-
-            <select
-              value={sort}
-              onChange={(e) => setSort(e.target.value as VideoSort)}
-              className="rounded border px-2 py-1 text-sm"
-            >
-              {SORT_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-
-            <input
-              type="number"
-              min="0"
-              placeholder="Min views"
-              value={minViews}
-              onChange={(e) => setMinViews(e.target.value)}
-              className="w-28 rounded border px-2 py-1 text-sm"
-            />
-
-            <select
-              value={days}
-              onChange={(e) =>
-                setDays(e.target.value ? (Number(e.target.value) as VideoDays) : "")
-              }
-              className="rounded border px-2 py-1 text-sm"
-            >
-              <option value="">All time</option>
-              {DAY_OPTIONS.map((option) => (
-                <option key={option} value={option}>
-                  Last {option} days
-                </option>
-              ))}
-            </select>
-
-          </div>
+        <div className="sticky top-0 z-20 -mx-4 mb-1 flex flex-wrap items-end justify-between gap-3 border-b border-gray-200 bg-gray-50 px-4 py-3">
+          <VideoFilters
+            {...filterValues}
+            onChange={changeFilters}
+            onReset={() => { setFilterValues(EMPTY_VIDEO_FILTERS); setPage(1); }}
+          />
 
           <Button
             onClick={handleScanNow}
@@ -505,106 +192,33 @@ export default function YoutubePopularPage() {
           </Button>
         </div>
 
-        <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
-              Visible Videos
-            </div>
-            <div className="mt-2 text-2xl font-semibold text-gray-900">{summary.total}</div>
-            <div className="mt-1 text-sm text-gray-500">
-              Avg score {formatFixedNumber(summary.avgScore, 1)}
-            </div>
-          </div>
-
-          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
-              Trending
-            </div>
-            <div className="mt-2 text-2xl font-semibold text-rose-600">{summary.trending}</div>
-            <div className="mt-1 text-sm text-gray-500">Highest confidence picks</div>
-          </div>
-
-          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
-              Breakout
-            </div>
-            <div className="mt-2 text-2xl font-semibold text-orange-600">{summary.breakout}</div>
-            <div className="mt-1 text-sm text-gray-500">Beating creator baseline</div>
-          </div>
-
-          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
-              Emerging
-            </div>
-            <div className="mt-2 text-2xl font-semibold text-sky-600">{summary.emerging}</div>
-            <div className="mt-1 text-sm text-gray-500">Fresh videos worth tracking</div>
-          </div>
-
-          <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-            <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
-              Average VPH
-            </div>
-            <div className="mt-2 text-2xl font-semibold text-gray-900">
-              {formatCompactNumber(summary.avgViewsPerHour)}
-            </div>
-            <div className="mt-1 text-sm text-gray-500">Views per hour in result set</div>
-          </div>
-        </div>
-
         {loading ? (
           <div className="flex flex-col gap-4">
             {Array.from({ length: 4 }).map((_, index) => (
               <VideoCardSkeleton key={index} />
             ))}
           </div>
-        ) : visibleVideos.length === 0 ? (
+        ) : videos.length === 0 ? (
           <div className="rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center text-gray-500">
             No popular videos found for the current filters.
           </div>
         ) : (
           <div className="flex flex-col gap-4">
-            {visibleVideos.map((video) => (
-              <div key={video.id}>
-                <VideoCard
-                  video={video}
-                  sidebarActions={
-                    <Button
-                      variant="secondary"
-                      onClick={() => void handleOpenTranscript(video)}
-                      disabled={transcriptReadLoadingId === video.id}
-                      className="text-sm"
-                    >
-                      {transcriptReadLoadingId === video.id
-                        ? "Opening..."
-                        : "Transcript"}
-                    </Button>
-                  }
-                />
-              </div>
+            {videos.map((video) => (
+              <VideoCard key={video.id} video={video} onVideoUpdated={(updatedVideo) =>
+                setVideos((current) => current.map((item) => item.id === updatedVideo.id ? updatedVideo : item))
+              } />
             ))}
           </div>
         )}
 
-        <TranscriptModal
-          open={transcriptOpen}
-          transcript={activeTranscript}
-          loadingTranscript={transcriptLoading}
-          savingTranscript={transcriptSaving}
-          creatingDraft={draftLoadingId === activeTranscript?.id}
-          onSaveTranscript={(transcriptText) => {
-            void handleSaveTranscript(transcriptText);
-          }}
-          onCreateDraft={() => {
-            if (activeTranscript) {
-              void handleGenerateDraft(activeTranscript.id);
-            }
-          }}
-          onClose={() => {
-            setTranscriptLoading(false);
-            setTranscriptSaving(false);
-            setTranscriptOpen(false);
-            setActiveTranscript(null);
-          }}
+
+        <VideoPaginationControls
+          pagination={pagination}
+          pageSize={pageSize}
+          disabled={loading}
+          onPageChange={setPage}
+          onPageSizeChange={(size) => { setPageSize(size); setPage(1); }}
         />
 
         <Toast
