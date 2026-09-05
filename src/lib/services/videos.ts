@@ -5,6 +5,7 @@ import {  Article,
           PopularVideo,
           VideoTranscript,
           YouTubeRegion,
+          GetVideosByKeywordParams,
           GetVideosByNicheParams,
           VideosResponse,
           ApiVideosResponse,
@@ -94,7 +95,7 @@ export async function generateDraftArticle(
 
 export async function getVideosByKeyword(
   keyword_id: number,
-  params: GetVideosByNicheParams = {}
+  params: GetVideosByKeywordParams = {}
 ): Promise<VideosResponse[]> {
 
   console.log("Fetching videos with params:");
@@ -119,10 +120,6 @@ export async function getVideosByNiche(
 ): Promise<VideosResponse> {
   const searchParams = new URLSearchParams();
 
-  if (params.sort) {
-    searchParams.set("sort", params.sort);
-  }
-
   if (
     params.min_views !== undefined &&
     params.min_views !== null
@@ -130,10 +127,42 @@ export async function getVideosByNiche(
     searchParams.set("min_views", String(params.min_views));
   }
 
-  if (params.days !== undefined && params.days !== null) {
-    searchParams.set("days", String(params.days));
+  if (params.published_age) {
+    searchParams.set("published_age", params.published_age);
   }
 
+  if (params.published_from) {
+    searchParams.set("published_from", params.published_from);
+  }
+
+  if (params.published_to) {
+    searchParams.set("published_to", params.published_to);
+  }
+
+  const multiValueFilters = {
+    trend_stage: params.trend_stage,
+    region_code: params.region_code,
+    source: params.source,
+    category_title: params.category_title,
+  };
+
+  Object.entries(multiValueFilters).forEach(([name, values]) => {
+    values?.forEach((value) => searchParams.append(name, value));
+  });
+
+  if (params.min_score !== undefined) {
+    searchParams.set("min_score", String(params.min_score));
+  }
+  const minimumScoreFilters = {
+    min_speed_score: params.min_speed_score,
+    min_breakout_score: params.min_breakout_score,
+    min_engagement_score: params.min_engagement_score,
+    min_confidence_score: params.min_confidence_score,
+  };
+
+  Object.entries(minimumScoreFilters).forEach(([name, value]) => {
+    if (value !== undefined) searchParams.set(name, String(value));
+  });
   searchParams.set("page", String(params.page ?? 1));
   searchParams.set("size", String(params.size ?? 20));
 
@@ -184,7 +213,9 @@ export async function getVideosByNiche(
 
   const pages =
     pagination?.pages ??
+    pagination?.total_pages ??
     response.pages ??
+    response.total_pages ??
     Math.max(1, Math.ceil(total / size));
 
   const hasNext =
@@ -194,7 +225,9 @@ export async function getVideosByNiche(
 
   const hasPrev =
     pagination?.has_prev ??
+    pagination?.has_previous ??
     response.has_prev ??
+    response.has_previous ??
     page > 1;
 
   return {

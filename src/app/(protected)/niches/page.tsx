@@ -8,6 +8,10 @@ import ProtectedPageShell from "@/components/layout/ProtectedPageShell";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import Button from "@/components/ui/Button";
 import Sidebar, { SidebarItem } from "@/components/ui/Sidebar";
+import VideoFilters, {
+  VideoPaginationControls,
+  VideoFilterValues,
+} from "@/components/ui/VideoFilters";
 import VideoCard from "@/components/ui/VideoCard";
 import {
   addKeyword,
@@ -19,29 +23,25 @@ import {
   scanNicheYouTube,
   updateNicheStatus,
 } from "@/lib/services/niche";
-import {
-  getVideosByNiche,
-} from "@/lib/services/videos";
-import {
-  formatCompactNumber,
-  formatFixedNumber,
-} from "@/lib/utils/formatters";
-import { TrendVideo, VideosPagination, videodays, VideoSort } from "@/types/types";
-
-const SORT_OPTIONS: Array<{ value: VideoSort; label: string }> = [
-  { value: "score", label: "Trending Score" },
-  { value: "trending", label: "Trending" },
-  { value: "breakout", label: "Breakout" },
-  { value: "emerging", label: "Emerging" },
-  { value: "sustained_demand", label: "Sustained Demand" },
-  { value: "watchlist", label: "Watchlist" },
-  { value: "vph", label: "Views / Hour" },
-  { value: "breakout_score", label: "Breakout Score" },
-  { value: "engagement", label: "Engagement" },
-  { value: "views", label: "Views" },
-  { value: "recent", label: "Recent" },
+import { getVideosByNiche } from "@/lib/services/videos";
+import { TrendVideo, VideosPagination, VideoTrendStage } from "@/types/types";
+const TREND_STAGES: VideoTrendStage[] = [
+  "watchlist",
+  "emerging",
+  "breakout",
+  "trending",
+  "sustained_demand",
 ];
-const DAY_OPTIONS: VideoDays[] = [7, 30];
+const PAGE_SIZE = 20;
+const PAGE_SIZES = [10, 20, 50, 100];
+const EMPTY_PAGINATION: VideosPagination = {
+  page: 1,
+  size: PAGE_SIZE,
+  total: 0,
+  pages: 1,
+  has_next: false,
+  has_prev: false,
+};
 
 function parseSelectedNiche(value: string | null): number | null {
   if (!value) {
@@ -52,23 +52,6 @@ function parseSelectedNiche(value: string | null): number | null {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
 
-function parseSort(value: string | null): VideoSort {
-  return SORT_OPTIONS.some((option) => option.value === value)
-    ? (value as VideoSort)
-    : "score";
-}
-
-function parseDays(value: string | null): VideoDays | null {
-  if (!value) {
-    return null;
-  }
-
-  const parsed = Number(value);
-  return DAY_OPTIONS.includes(parsed as VideoDays)
-    ? (parsed as VideoDays)
-    : null;
-}
-
 function parseMinViews(value: string | null): string {
   if (!value) {
     return "";
@@ -76,6 +59,33 @@ function parseMinViews(value: string | null): string {
 
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= 0 ? String(parsed) : "";
+}
+
+function parseNonNegativeNumber(value: string | null): string {
+  if (value === null || value === "") return "";
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? String(parsed) : "";
+}
+
+function parseTrendStage(value: string | null): VideoTrendStage | "" {
+  return value && TREND_STAGES.includes(value as VideoTrendStage)
+    ? (value as VideoTrendStage)
+    : "";
+}
+
+function parsePage(value: string | null): number {
+  if (!value) return 1;
+
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : 1;
+}
+
+function parsePageSize(value: string | null): number {
+  if (!value) return PAGE_SIZE;
+
+  const parsed = Number(value);
+  return PAGE_SIZES.includes(parsed) ? parsed : PAGE_SIZE;
 }
 
 function VideoCardSkeleton() {
@@ -109,92 +119,89 @@ function NichesPageContent() {
   const inputRefs = useRef<{ [key: number]: HTMLInputElement | null }>({});
   const [newNiche, setNewNiche] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<Niche | null>(null);
-  const [selectedNicheId, setSelectedNicheId] = useState<number | null>(
-    parseSelectedNiche(searchParams.get("niche"))
-  );
   const [expandedNiches, setExpandedNiches] = useState<{ [id: number]: boolean }>(
     {}
   );
   const [leftWidth, setLeftWidth] = useState(320);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const isResizing = useRef(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [videos, setVideos] = useState<TrendVideo[]>([]);
   const [loadingVideos, setLoadingVideos] = useState(false);
+  const [videoError, setVideoError] = useState<string | null>(null);
   const [scanningNiche, setScanningNiche] = useState(false);
   const [scanMessage, setScanMessage] = useState<string | null>(null);
   const [scanMessageType, setScanMessageType] = useState<"success" | "error" | null>(
     null
   );
   const [keywordMessage, setKeywordMessage] = useState<string | null>(null);
-  const [sort, setSort] = useState<VideoSort>(parseSort(searchParams.get("sort")));
-  const [minViews, setMinViews] = useState(parseMinViews(searchParams.get("min_views")));
-  const [days, setDays] = useState<VideoDays | "">(
-    parseDays(searchParams.get("days")) ?? ""
-  );
-  const [videoPagination, setVideoPagination] =
-    useState<VideosPagination>({
-      page: 1,
-      size: 20,
-      total: 0,
-      pages: 1,
-      has_next: false,
-      has_prev: false,
-    });
+  const [videoPagination, setVideoPagination] = useState<VideosPagination>(EMPTY_PAGINATION);
+  const [reloadVersion, setReloadVersion] = useState(0);
+
+  const selectedNicheId = parseSelectedNiche(searchParams.get("niche"));
+  const minViews = parseMinViews(searchParams.get("min_views"));
+  const publishedFrom = searchParams.get("published_from") ?? "";
+  const publishedTo = searchParams.get("published_to") ?? "";
+  const trendStage = parseTrendStage(searchParams.get("trend_stage"));
+  const regionCode = searchParams.get("region_code") ?? "";
+  const source = searchParams.get("source") || "NICHE";
+  const categoryTitle = searchParams.get("category_title") ?? "";
+  const minScore = parseNonNegativeNumber(searchParams.get("min_score"));
+  const minSpeedScore = parseNonNegativeNumber(searchParams.get("min_speed_score"));
+  const minBreakoutScore = parseNonNegativeNumber(searchParams.get("min_breakout_score"));
+  const minEngagementScore = parseNonNegativeNumber(searchParams.get("min_engagement_score"));
+  const minConfidenceScore = parseNonNegativeNumber(searchParams.get("min_confidence_score"));
+  const page = parsePage(searchParams.get("page"));
+  const pageSize = parsePageSize(searchParams.get("size"));
+  const hasCompleteDateRange = Boolean(publishedFrom && publishedTo);
+  const publishedStart = hasCompleteDateRange
+    ? publishedFrom < publishedTo ? publishedFrom : publishedTo
+    : undefined;
+  const publishedEnd = hasCompleteDateRange
+    ? publishedFrom > publishedTo ? publishedFrom : publishedTo
+    : undefined;
 
   const videoFilters = useMemo(
     () => ({
-      sort,
       min_views: minViews ? Number(minViews) : undefined,
-      days: days === "" ? null : days,
+      published_from: publishedStart,
+      published_to: publishedEnd,
+      trend_stage: trendStage ? [trendStage] : [],
+      region_code: regionCode ? [regionCode] : [],
+      source: source ? [source] : [],
+      category_title: categoryTitle ? [categoryTitle] : [],
+      min_score: minScore ? Number(minScore) : undefined,
+      min_speed_score: minSpeedScore ? Number(minSpeedScore) : undefined,
+      min_breakout_score: minBreakoutScore ? Number(minBreakoutScore) : undefined,
+      min_engagement_score: minEngagementScore ? Number(minEngagementScore) : undefined,
+      min_confidence_score: minConfidenceScore ? Number(minConfidenceScore) : undefined,
+      page,
+      size: pageSize,
     }),
-    [days, minViews, sort]
+    [
+      categoryTitle,
+      publishedEnd,
+      publishedStart,
+      minBreakoutScore,
+      minConfidenceScore,
+      minEngagementScore,
+      minScore,
+      minSpeedScore,
+      minViews,
+      page,
+      pageSize,
+      regionCode,
+      source,
+      trendStage,
+    ]
   );
-
-  const videoSummary = useMemo(() => {
-    const stageCounts = {
-      trending: 0,
-      breakout: 0,
-      emerging: 0,
-      watchlist: 0,
-    };
-
-    let totalScore = 0;
-    let totalViewsPerHour = 0;
-
-    videos.forEach((video) => {
-      totalScore += Number(video.virality_score ?? 0);
-      totalViewsPerHour += Number(video.views_per_hour ?? 0);
-
-      if (video.trend_stage === "trending") {
-        stageCounts.trending += 1;
-      } else if (video.trend_stage === "breakout") {
-        stageCounts.breakout += 1;
-      } else if (video.trend_stage === "emerging") {
-        stageCounts.emerging += 1;
-      } else {
-        stageCounts.watchlist += 1;
-      }
-    });
-
-    return {
-      total: videoPagination.total,
-      avgScore: videos.length
-        ? totalScore / videos.length
-        : 0,
-      avgViewsPerHour: videos.length
-        ? totalViewsPerHour / videos.length
-        : 0,
-      ...stageCounts,
-    };
-  }, [videos, videoPagination.total]);
 
   function updateQueryParams(nextValues: {
     niche?: number | null;
-    sort?: VideoSort;
     min_views?: string;
-    days?: VideoDays | "";
     page?: number;
-  }) {
+    size?: number;
+  } & Partial<VideoFilterValues>) {
     const params = new URLSearchParams(searchParams.toString());
 
     if (nextValues.niche !== undefined) {
@@ -205,10 +212,6 @@ function NichesPageContent() {
       }
     }
 
-    if (nextValues.sort !== undefined) {
-      params.set("sort", nextValues.sort);
-    }
-
     if (nextValues.min_views !== undefined) {
       if (nextValues.min_views) {
         params.set("min_views", nextValues.min_views);
@@ -217,19 +220,40 @@ function NichesPageContent() {
       }
     }
 
-    if (nextValues.days !== undefined) {
-      if (nextValues.days === "") {
-        params.delete("days");
-      } else {
-        params.set("days", String(nextValues.days));
-      }
-    }
+    const textFilters = {
+      published_from: nextValues.publishedFrom,
+      published_to: nextValues.publishedTo,
+      trend_stage: nextValues.trendStage,
+      region_code: nextValues.regionCode,
+      source: nextValues.source,
+      category_title: nextValues.categoryTitle,
+      min_score: nextValues.minScore,
+      min_speed_score: nextValues.minSpeedScore,
+      min_breakout_score: nextValues.minBreakoutScore,
+      min_engagement_score: nextValues.minEngagementScore,
+      min_confidence_score: nextValues.minConfidenceScore,
+    };
+
+    Object.entries(textFilters).forEach(([name, value]) => {
+      if (value === undefined) return;
+      const normalized = value.trim();
+      if (normalized) params.set(name, normalized);
+      else params.delete(name);
+    });
 
     if (nextValues.page !== undefined) {
       if (nextValues.page <= 1) {
         params.delete("page");
       } else {
         params.set("page", String(nextValues.page));
+      }
+    }
+
+    if (nextValues.size !== undefined) {
+      if (nextValues.size === PAGE_SIZE) {
+        params.delete("size");
+      } else {
+        params.set("size", String(nextValues.size));
       }
     }
 
@@ -240,20 +264,6 @@ function NichesPageContent() {
       { scroll: false }
     );
   }
-
-  function parsePage(value: string | null): number {
-    if (!value) {
-      return 1;
-    }
-
-    const parsed = Number(value);
-
-    return Number.isInteger(parsed) && parsed > 0
-      ? parsed
-      : 1;
-  }
-
-  const page = parsePage(searchParams.get("page"));
 
   useEffect(() => {
     async function load() {
@@ -270,14 +280,8 @@ function NichesPageContent() {
     load();
   }, []);
 
-  useEffect(() => {
-    setSelectedNicheId(parseSelectedNiche(searchParams.get("niche")));
-    setSort(parseSort(searchParams.get("sort")));
-    setMinViews(parseMinViews(searchParams.get("min_views")));
-    setDays(parseDays(searchParams.get("days")) ?? "");
-  }, [searchParams]);
-
   const handleMouseDown = () => {
+    if (isSidebarCollapsed) return;
     isResizing.current = true;
   };
 
@@ -296,14 +300,8 @@ function NichesPageContent() {
   useEffect(() => {
     if (!selectedNicheId) {
       setVideos([]);
-      setVideoPagination({
-        page: 1,
-        size: 20,
-        total: 0,
-        pages: 1,
-        has_next: false,
-        has_prev: false,
-      });
+      setVideoPagination(EMPTY_PAGINATION);
+      setVideoError(null);
       return;
     }
   
@@ -312,33 +310,17 @@ function NichesPageContent() {
     async function loadVideos() {
       try {
         setLoadingVideos(true);
+        setVideoError(null);
       
-        const response = await getVideosByNiche(
-          nicheId,
-          {
-            sort,
-            min_views: minViews
-              ? Number(minViews)
-              : undefined,
-            days: days === "" ? null : days,
-            page,
-            size: 20,
-          }
-        );
+        const response = await getVideosByNiche(nicheId, videoFilters);
       
         setVideos(response.items);
         setVideoPagination(response.pagination);
       } catch (err) {
         console.error("Failed to load videos", err);
         setVideos([]);
-        setVideoPagination({
-          page: 1,
-          size: 20,
-          total: 0,
-          pages: 1,
-          has_next: false,
-          has_prev: false,
-        });
+        setVideoPagination(EMPTY_PAGINATION);
+        setVideoError(err instanceof Error ? err.message : "Unable to load videos for this niche.");
       } finally {
         setLoadingVideos(false);
       }
@@ -347,10 +329,8 @@ function NichesPageContent() {
     loadVideos();
   }, [
     selectedNicheId,
-    sort,
-    minViews,
-    days,
-    page,
+    videoFilters,
+    reloadVersion,
   ]);
 
   useEffect(() => {
@@ -507,7 +487,6 @@ function NichesPageContent() {
       setNiches((prev) => prev.filter((n) => n.id !== deletedNicheId));
 
       if (selectedNicheId === deletedNicheId) {
-        setSelectedNicheId(null);
         setVideos([]);
         updateQueryParams({ niche: null });
       }
@@ -540,16 +519,7 @@ function NichesPageContent() {
         `Scan result ${response.videos_saved} videos saved.`
       );
       setScanMessageType("success");
-      setLoadingVideos(true);
-
-      try {
-        const refreshedVideos = await getVideosByNiche(selectedNicheId, videoFilters);
-        setVideos(refreshedVideos);
-      } catch (refreshErr) {
-        console.error("Failed to refresh videos after scan", refreshErr);
-      } finally {
-        setLoadingVideos(false);
-      }
+      setReloadVersion((version) => version + 1);
     } catch (err) {
       console.error("Failed to scan niche YouTube videos", err);
       setScanMessage(
@@ -571,8 +541,7 @@ function NichesPageContent() {
     isActive: selectedNicheId === niche.id,
     isExpanded: Boolean(expandedNiches[niche.id]),
     onClick: () => {
-      setSelectedNicheId(niche.id);
-      updateQueryParams({ niche: niche.id });
+      updateQueryParams({ niche: niche.id, page: 1 });
       toggleExpand(niche.id);
     },
     actions: (
@@ -676,6 +645,9 @@ function NichesPageContent() {
         description="Manage niche keywords and review scanned video opportunities."
         sidebarClassName="pr-2"
         sidebarStyle={{ width: leftWidth }}
+        contentClassName="flex-1 overflow-y-auto px-4"
+        sidebarCollapsed={isSidebarCollapsed}
+        onSidebarToggle={() => setIsSidebarCollapsed((collapsed) => !collapsed)}
         sidebarAfter={
           <div
             onMouseDown={handleMouseDown}
@@ -736,54 +708,56 @@ function NichesPageContent() {
 
         {selectedNicheId && (
           <>
-            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-              <div className="flex flex-wrap gap-3">
-                <select
-                  value={sort}
-                  onChange={(e) => {
-                    const nextSort = e.target.value as VideoSort;
-                    setSort(nextSort);
-                    updateQueryParams({ sort: nextSort });
-                  }}
-                  className="rounded border px-2 py-1 text-sm"
-                >
-                  {SORT_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-
-                <input
-                  type="number"
-                  min="0"
-                  inputMode="numeric"
-                  placeholder="Min views"
-                  value={minViews}
-                  onChange={(e) => {
-                    const nextValue = e.target.value;
-                    setMinViews(nextValue);
-                    updateQueryParams({ min_views: nextValue });
-                  }}
-                  className="w-32 rounded border px-2 py-1 text-sm"
-                />
-
-                <select
-                  value={days}
-                  onChange={(e) => {
-                    const nextDays = e.target.value
-                      ? (Number(e.target.value) as VideoDays)
-                      : "";
-                    setDays(nextDays);
-                    updateQueryParams({ days: nextDays });
-                  }}
-                  className="rounded border px-2 py-1 text-sm"
-                >
-                  <option value="">All time</option>
-                  <option value="7">Last 7 days</option>
-                  <option value="30">Last 30 days</option>
-                </select>
-              </div>
+            <div className="sticky top-0 z-20 -mx-4 mb-1 flex flex-wrap items-end justify-between gap-3 border-b border-gray-200 bg-gray-50 px-4 py-3">
+              <VideoFilters
+                minViews={minViews}
+                publishedFrom={publishedFrom}
+                publishedTo={publishedTo}
+                trendStage={trendStage}
+                regionCode={regionCode}
+                source={source}
+                categoryTitle={categoryTitle}
+                minScore={minScore}
+                minSpeedScore={minSpeedScore}
+                minBreakoutScore={minBreakoutScore}
+                minEngagementScore={minEngagementScore}
+                minConfidenceScore={minConfidenceScore}
+                lockSource
+                onChange={(filters) =>
+                  updateQueryParams({
+                    min_views: filters.minViews,
+                    publishedFrom: filters.publishedFrom,
+                    publishedTo: filters.publishedTo,
+                    trendStage: filters.trendStage,
+                    regionCode: filters.regionCode,
+                    source: filters.source,
+                    categoryTitle: filters.categoryTitle,
+                    minScore: filters.minScore,
+                    minSpeedScore: filters.minSpeedScore,
+                    minBreakoutScore: filters.minBreakoutScore,
+                    minEngagementScore: filters.minEngagementScore,
+                    minConfidenceScore: filters.minConfidenceScore,
+                    page: 1,
+                  })
+                }
+                onReset={() =>
+                  updateQueryParams({
+                    min_views: "",
+                    publishedFrom: "",
+                    publishedTo: "",
+                    trendStage: "",
+                    regionCode: "",
+                    source: "NICHE",
+                    categoryTitle: "",
+                    minScore: "",
+                    minSpeedScore: "",
+                    minBreakoutScore: "",
+                    minEngagementScore: "",
+                    minConfidenceScore: "",
+                    page: 1,
+                  })
+                }
+              />
 
               <div className="flex max-w-md justify-end gap-3">
 
@@ -813,128 +787,31 @@ function NichesPageContent() {
               </div>
             </div>
 
-            <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-              <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-                <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
-                  Videos
+            <div className="space-y-4 pb-20">
+              {loadingVideos ? (
+                Array.from({ length: 3 }, (_, index) => <VideoCardSkeleton key={index} />)
+              ) : videoError ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                  {videoError}
                 </div>
-                <div className="mt-2 text-2xl font-semibold text-gray-900">
-                  {videoSummary.total}
+              ) : videos.length === 0 ? (
+                <div className="rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center text-sm text-gray-500">
+                  No videos match the selected niche and filters.
                 </div>
-                <div className="mt-1 text-sm text-gray-500">
-                  Avg score {formatFixedNumber(videoSummary.avgScore, 1)}
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-                <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
-                  Trending
-                </div>
-                <div className="mt-2 text-2xl font-semibold text-rose-600">
-                  {videoSummary.trending}
-                </div>
-                <div className="mt-1 text-sm text-gray-500">Strongest niche signals</div>
-              </div>
-
-              <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-                <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
-                  Breakout
-                </div>
-                <div className="mt-2 text-2xl font-semibold text-orange-600">
-                  {videoSummary.breakout}
-                </div>
-                <div className="mt-1 text-sm text-gray-500">Beating creator averages</div>
-              </div>
-
-              <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-                <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
-                  Emerging
-                </div>
-                <div className="mt-2 text-2xl font-semibold text-sky-600">
-                  {videoSummary.emerging}
-                </div>
-                <div className="mt-1 text-sm text-gray-500">Fresh uploads to watch</div>
-              </div>
-
-              <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-                <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
-                  Average VPH
-                </div>
-                <div className="mt-2 text-2xl font-semibold text-gray-900">
-                  {formatCompactNumber(videoSummary.avgViewsPerHour)}
-                </div>
-                <div className="mt-1 text-sm text-gray-500">Views per hour in this niche</div>
-              </div>
+              ) : (
+                videos.map((video) => <VideoCard key={video.id} video={video} />)
+              )}
             </div>
 
-{!loadingVideos && videoPagination.total > 0 && (
-  <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 pt-4">
-    <div className="text-sm text-gray-500">
-      Showing{" "}
-      <span className="font-medium text-gray-700">
-        {(videoPagination.page - 1) * videoPagination.size + 1}
-      </span>{" "}
-      to{" "}
-      <span className="font-medium text-gray-700">
-        {Math.min(
-          videoPagination.page * videoPagination.size,
-          videoPagination.total
-        )}
-      </span>{" "}
-      of{" "}
-      <span className="font-medium text-gray-700">
-        {videoPagination.total}
-      </span>{" "}
-      videos
-    </div>
-
-    <div className="flex items-center gap-2">
-      <Button
-        variant="secondary"
-        disabled={!videoPagination.has_prev || loadingVideos}
-        onClick={() => {
-          const previousPage = Math.max(
-            1,
-            videoPagination.page - 1
-          );
-
-          updateQueryParams({
-            page: previousPage,
-          });
-        }}
-      >
-        Previous
-      </Button>
-
-      <span className="px-2 text-sm text-gray-600">
-        Page{" "}
-        <span className="font-medium text-gray-900">
-          {videoPagination.page}
-        </span>{" "}
-        of{" "}
-        <span className="font-medium text-gray-900">
-          {videoPagination.pages}
-        </span>
-      </span>
-
-      <Button
-        disabled={!videoPagination.has_next || loadingVideos}
-        onClick={() => {
-          const nextPage = Math.min(
-            videoPagination.pages,
-            videoPagination.page + 1
-          );
-
-          updateQueryParams({
-            page: nextPage,
-          });
-        }}
-      >
-        Next
-      </Button>
-    </div>
-  </div>
-)}
+            <VideoPaginationControls
+              pagination={videoPagination}
+              pageSize={pageSize}
+              disabled={loadingVideos}
+              onPageChange={(nextPage) => updateQueryParams({ page: nextPage })}
+              onPageSizeChange={(nextSize) =>
+                updateQueryParams({ size: nextSize, page: 1 })
+              }
+            />
           </>
         )}
       </ProtectedPageShell>

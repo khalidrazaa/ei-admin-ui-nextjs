@@ -226,22 +226,33 @@ export type TrendVideo = BaseVideoInsight;
 export type PopularVideo = BaseVideoInsight;
 
 export type VideoSort =
-  |  "score"
-  |  "trend_stage"
-  |  "speed_score"
-  |  "breakout_score"
-  |  "engagement"
-  |  "views"
-  |  "published_at"
-  |  "region"
-  |  "source"
-  |  "category_title"
-  |  "confidence_score"
+  | "score"
+  | "trend_stage"
+  | "speed_score"
+  | "breakout_score"
+  | "engagement"
+  | "views"
+  | "published_at"
+  | "region"
+  | "source"
+  | "category_title"
+  | "confidence_score";
 
 
   export type VideoDays = 7 | 30;
+export type PublishedAge =
+  | "6h"
+  | "12h"
+  | "24h"
+  | "2d"
+  | "3d"
+  | "4d"
+  | "5d"
+  | "6d"
+  | "7d"
+  | "7d+";
 
-  export interface VideosPagination {
+export interface VideosPagination {
   page: number;
   size: number;
   total: number;
@@ -256,11 +267,27 @@ export interface VideosResponse {
 }
 
 export interface GetVideosByNicheParams {
-  sort?: VideoSort;
   min_views?: number;
-  days?: VideoDays | null;
+  published_age?: PublishedAge;
+  published_from?: string;
+  published_to?: string;
+  trend_stage?: VideoTrendStage[];
+  region_code?: string[];
+  source?: string[];
+  category_title?: string[];
+  min_score?: number;
+  min_speed_score?: number;
+  min_breakout_score?: number;
+  min_engagement_score?: number;
+  min_confidence_score?: number;
   page?: number;
   size?: number;
+}
+
+export interface GetVideosByKeywordParams {
+  sort?: string;
+  min_views?: number;
+  days?: VideoDays | null;
 }
 
 export interface ApiVideosResponse {
@@ -270,16 +297,20 @@ export interface ApiVideosResponse {
   size?: number;
   total?: number;
   pages?: number;
+  total_pages?: number;
   has_next?: boolean;
   has_prev?: boolean;
+  has_previous?: boolean;
 
   pagination?: {
     page?: number;
     size?: number;
     total?: number;
     pages?: number;
+    total_pages?: number;
     has_next?: boolean;
     has_prev?: boolean;
+    has_previous?: boolean;
   };
 }
 
