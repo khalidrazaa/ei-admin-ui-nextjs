@@ -269,6 +269,8 @@ export interface VideosResponse {
 export interface GetVideosByNicheParams {
   min_views?: number;
   published_age?: PublishedAge;
+  published_from?: string;
+  published_to?: string;
   trend_stage?: VideoTrendStage[];
   region_code?: string[];
   source?: string[];

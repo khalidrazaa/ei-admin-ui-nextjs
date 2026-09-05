@@ -131,6 +131,14 @@ export async function getVideosByNiche(
     searchParams.set("published_age", params.published_age);
   }
 
+  if (params.published_from) {
+    searchParams.set("published_from", params.published_from);
+  }
+
+  if (params.published_to) {
+    searchParams.set("published_to", params.published_to);
+  }
+
   const multiValueFilters = {
     trend_stage: params.trend_stage,
     region_code: params.region_code,
