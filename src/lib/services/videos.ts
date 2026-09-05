@@ -11,21 +11,8 @@ import {  Article,
           ApiVideosResponse,
           PopularVideoFilters  } from "@/types/types";
 
-export async function getPopularVideos(
-  params: PopularVideoFilters = {}
-): Promise<PopularVideo[]> {
-  const query = new URLSearchParams();
-
-  if (params.sort) query.append("sort", params.sort);
-  if (params.min_views) query.append("min_views", String(params.min_views));
-  if (params.days) query.append("days", String(params.days));
-  if (params.region_code) query.append("region_code", params.region_code);
-  if (params.source) query.append("source", params.source);
-
-  return apiFetch(
-    `/admin/videos/popular?${query.toString()}`,
-    { method: "GET" }
-  ) as Promise<PopularVideo[]>;
+export async function getPopularVideos(params: PopularVideoFilters = {}): Promise<VideosResponse> {
+  return getVideoList("/admin/videos/popular", params);
 }
 
 export async function getPopularScanRegions(): Promise<YouTubeRegion[]> {
@@ -118,6 +105,10 @@ export async function getVideosByNiche(
   nicheId: number,
   params: GetVideosByNicheParams = {}
 ): Promise<VideosResponse> {
+  return getVideoList("/admin/videos/niches/" + nicheId, params);
+}
+
+async function getVideoList(endpoint: string, params: GetVideosByNicheParams): Promise<VideosResponse> {
   const searchParams = new URLSearchParams();
 
   if (
@@ -169,7 +160,7 @@ export async function getVideosByNiche(
   const queryString = searchParams.toString();
 
   const response = await apiFetch<ApiVideosResponse>(
-    `/admin/videos/niches/${nicheId}?${queryString}`,
+    endpoint + "?" + queryString,
     {
       method: "GET",
     }

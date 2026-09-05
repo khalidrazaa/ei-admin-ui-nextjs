@@ -23,6 +23,7 @@ import {
   scanNicheYouTube,
   updateNicheStatus,
 } from "@/lib/services/niche";
+import { toVideoListParams } from "@/lib/utils/videoFilters";
 import { getVideosByNiche } from "@/lib/services/videos";
 import { TrendVideo, VideosPagination, VideoTrendStage } from "@/types/types";
 const TREND_STAGES: VideoTrendStage[] = [
@@ -123,7 +124,6 @@ function NichesPageContent() {
     {}
   );
   const [leftWidth, setLeftWidth] = useState(320);
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const isResizing = useRef(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [videos, setVideos] = useState<TrendVideo[]>([]);
@@ -153,47 +153,15 @@ function NichesPageContent() {
   const minConfidenceScore = parseNonNegativeNumber(searchParams.get("min_confidence_score"));
   const page = parsePage(searchParams.get("page"));
   const pageSize = parsePageSize(searchParams.get("size"));
-  const hasCompleteDateRange = Boolean(publishedFrom && publishedTo);
-  const publishedStart = hasCompleteDateRange
-    ? publishedFrom < publishedTo ? publishedFrom : publishedTo
-    : undefined;
-  const publishedEnd = hasCompleteDateRange
-    ? publishedFrom > publishedTo ? publishedFrom : publishedTo
-    : undefined;
-
   const videoFilters = useMemo(
-    () => ({
-      min_views: minViews ? Number(minViews) : undefined,
-      published_from: publishedStart,
-      published_to: publishedEnd,
-      trend_stage: trendStage ? [trendStage] : [],
-      region_code: regionCode ? [regionCode] : [],
-      source: source ? [source] : [],
-      category_title: categoryTitle ? [categoryTitle] : [],
-      min_score: minScore ? Number(minScore) : undefined,
-      min_speed_score: minSpeedScore ? Number(minSpeedScore) : undefined,
-      min_breakout_score: minBreakoutScore ? Number(minBreakoutScore) : undefined,
-      min_engagement_score: minEngagementScore ? Number(minEngagementScore) : undefined,
-      min_confidence_score: minConfidenceScore ? Number(minConfidenceScore) : undefined,
-      page,
-      size: pageSize,
-    }),
-    [
-      categoryTitle,
-      publishedEnd,
-      publishedStart,
-      minBreakoutScore,
-      minConfidenceScore,
-      minEngagementScore,
-      minScore,
-      minSpeedScore,
-      minViews,
-      page,
-      pageSize,
-      regionCode,
-      source,
-      trendStage,
-    ]
+    () => toVideoListParams({
+      minViews, publishedFrom, publishedTo, trendStage, regionCode, source,
+      categoryTitle, minScore, minSpeedScore, minBreakoutScore,
+      minEngagementScore, minConfidenceScore,
+    }, page, pageSize),
+    [minViews, publishedFrom, publishedTo, trendStage, regionCode, source,
+      categoryTitle, minScore, minSpeedScore, minBreakoutScore,
+      minEngagementScore, minConfidenceScore, page, pageSize]
   );
 
   function updateQueryParams(nextValues: {
@@ -281,7 +249,6 @@ function NichesPageContent() {
   }, []);
 
   const handleMouseDown = () => {
-    if (isSidebarCollapsed) return;
     isResizing.current = true;
   };
 
@@ -646,8 +613,6 @@ function NichesPageContent() {
         sidebarClassName="pr-2"
         sidebarStyle={{ width: leftWidth }}
         contentClassName="flex-1 overflow-y-auto px-4"
-        sidebarCollapsed={isSidebarCollapsed}
-        onSidebarToggle={() => setIsSidebarCollapsed((collapsed) => !collapsed)}
         sidebarAfter={
           <div
             onMouseDown={handleMouseDown}
@@ -799,7 +764,17 @@ function NichesPageContent() {
                   No videos match the selected niche and filters.
                 </div>
               ) : (
-                videos.map((video) => <VideoCard key={video.id} video={video} />)
+                videos.map((video) => (
+                  <VideoCard
+                    key={video.id}
+                    video={video}
+                    onVideoUpdated={(updatedVideo) =>
+                      setVideos((current) =>
+                        current.map((item) => item.id === updatedVideo.id ? updatedVideo : item)
+                      )
+                    }
+                  />
+                ))
               )}
             </div>
 
