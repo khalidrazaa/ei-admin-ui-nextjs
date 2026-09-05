@@ -227,6 +227,13 @@ export type PopularVideo = BaseVideoInsight;
 
 export type VideoSort =
   | "score"
+  | "trending"
+  | "breakout"
+  | "emerging"
+  | "sustained_demand"
+  | "watchlist"
+  | "vph"
+  | "recent"
   | "trend_stage"
   | "speed_score"
   | "breakout_score"

@@ -16,7 +16,7 @@ import {
   saveVideoTranscript,
   scanPopularVideos,
 } from "@/lib/services/videos";
-import { VideoDays, VideoSort } from "@/lib/services/scaned-trends";
+import { VideoDays, VideoSort } from "@/types/types";
 import {
   formatCompactNumber,
   formatFixedNumber,
