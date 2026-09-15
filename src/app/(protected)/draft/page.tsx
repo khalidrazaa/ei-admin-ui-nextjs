@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 
 import ProtectedPageShell from "@/components/layout/ProtectedPageShell";
@@ -267,6 +268,7 @@ export default function DraftPage() {
     <ProtectedPageShell
       title="Draft"
       description="Review transcripts and turn them into article drafts."
+      settingsHref="/settings?tab=prompts"
       sidebar={
         <div className="space-y-4">
           <button
@@ -364,7 +366,7 @@ export default function DraftPage() {
       contentClassName="min-w-0 flex-1 overflow-y-auto p-4"
     >
         <div className="flex min-h-[calc(100vh-120px)] min-w-0 flex-col gap-4">
-          <div className="flex min-h-[560px] flex-col rounded-xl border border-gray-200 bg-white shadow-sm">
+          <div className="flex lg:min-h-[560px] flex-col rounded-xl border border-gray-200 bg-white shadow-sm">
           <div className="border-b border-gray-200 px-5 py-4">
             <h2 className="text-lg font-semibold text-gray-900">
               {mode === "manual"
@@ -425,14 +427,14 @@ export default function DraftPage() {
                     value={manualTranscript}
                     onChange={(e) => setManualTranscript(e.target.value)}
                     placeholder="Paste or write the transcript here."
-                    className="min-h-[420px] w-full rounded border px-3 py-2 text-sm leading-7"
+                    className="min-h-[50dvh] lg:min-h-[420px] w-full rounded border px-3 py-2 text-sm leading-7"
                   />
                 </div>
 
                 <button
                   onClick={() => void handleCreateManualTranscript()}
                   disabled={savingManualTranscript}
-                  className="rounded-lg border border-blue-600 bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="w-full lg:w-auto rounded-lg border border-blue-600 bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {savingManualTranscript ? "Saving..." : "Save Transcript"}
                 </button>
@@ -537,7 +539,7 @@ export default function DraftPage() {
               <button
                 onClick={() => void handleGenerateDraft()}
                 disabled={mode !== "existing" || !selectedVideoId || !transcript || generating}
-                className="rounded-lg border border-emerald-600 bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                className="w-full lg:w-auto rounded-lg border border-emerald-600 bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {generating ? "Generating Draft..." : "Create Draft"}
               </button>
@@ -548,6 +550,7 @@ export default function DraftPage() {
             <h3 className="text-base font-semibold text-gray-900">Latest Saved Draft</h3>
             {latestArticle ? (
               <div className="mt-4 space-y-3">
+                <Link href={"/articles?article=" + latestArticle.id} className="flex min-h-11 items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">Review & Publish</Link>
                 <div>
                   <div className="text-sm font-medium text-gray-900">{latestArticle.title}</div>
                   <div className="mt-1 text-xs text-gray-500">{latestArticle.slug}</div>

@@ -398,6 +398,8 @@ export default function ArticlesPage() {
         const data = await getArticles();
         setArticles(data);
         setError(null);
+        const requestedId = Number(new URLSearchParams(window.location.search).get("article"));
+        if (requestedId > 0 && Number.isSafeInteger(requestedId)) setSelectedArticleId(requestedId);
       } catch (err) {
         console.error("Failed to load articles", err);
         setError("Failed to load articles");
@@ -465,6 +467,12 @@ export default function ArticlesPage() {
     contentHtmlRef.current = nextHtml;
     editor.innerHTML = nextHtml;
   }, [selectedArticle]);
+
+  useEffect(() => {
+    if (editorStep === 1 && contentEditorRef.current) {
+      contentEditorRef.current.innerHTML = contentHtmlRef.current;
+    }
+  }, [editorStep]);
 
   useEffect(() => {
     if (!message || messageType === null) {
@@ -663,7 +671,7 @@ export default function ArticlesPage() {
             </div>
           </div>
         }
-        contentClassName="flex-1 overflow-y-auto p-6"
+        contentClassName="flex-1 overflow-y-auto p-4 lg:p-6"
       >
         {loadingList ? (
           <div className="rounded-xl border border-gray-200 bg-white p-6 text-sm text-gray-500 shadow-sm">
@@ -689,7 +697,28 @@ export default function ArticlesPage() {
             {filteredArticles.length === 0 ? (
               <div className="p-8 text-sm text-gray-500">No articles for this category.</div>
             ) : (
-              <div className="overflow-x-auto">
+              <>
+              <div className="divide-y divide-gray-200 lg:hidden">
+                {filteredArticles.map((article) => (
+                  <button
+                    key={article.id}
+                    type="button"
+                    onClick={() => openEditor(article.id)}
+                    className="block w-full space-y-2 p-4 text-left hover:bg-blue-50/50"
+                  >
+                    <div className="font-medium text-gray-900">{article.title}</div>
+                    <div className="text-xs text-gray-500">{article.slug}</div>
+                    <div className="text-sm text-gray-700">{getPreviewText(article)}</div>
+                    <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500">
+                      <span className="capitalize">{article.status}</span>
+                      <span>{formatDate(article.created_at)}</span>
+                      <span>{article.host_site}</span>
+                    </div>
+                    <span className="inline-block text-sm font-medium text-blue-700">Edit article</span>
+                  </button>
+                ))}
+              </div>
+              <div className="hidden overflow-x-auto lg:block">
                 <table className="min-w-full divide-y divide-gray-200 text-sm">
                   <thead className="bg-gray-50">
                     <tr className="text-left text-gray-600">
@@ -720,6 +749,7 @@ export default function ArticlesPage() {
                   </tbody>
                 </table>
               </div>
+              </>
             )}
           </div>
         ) : loadingArticle || selectedArticle === null ? (
@@ -728,7 +758,7 @@ export default function ArticlesPage() {
           </div>
         ) : (
           <div className="space-y-5">
-            <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+            <div className="sticky top-0 z-20 rounded-xl border border-gray-200 bg-white p-4 shadow-sm lg:static">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h2 className="text-base font-semibold text-gray-900">{selectedArticle.title}</h2>
@@ -757,7 +787,10 @@ export default function ArticlesPage() {
                   {editorStep === 1 ? (
                     <button
                       type="button"
-                      onClick={() => setEditorStep(2)}
+                      onClick={() => {
+                        syncContentFromEditor();
+                        setEditorStep(2);
+                      }}
                       className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
                     >
                       Next Step
@@ -769,14 +802,14 @@ export default function ArticlesPage() {
                     disabled={saving}
                     className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {saving ? "Saving..." : "Save Changes"}
+                    {saving ? "Saving..." : editorForm.status === "published" ? "Publish Changes" : "Save Changes"}
                   </button>
                 </div>
               </div>
             </div>
 
             {editorStep === 1 ? (
-              <div className="space-y-4 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+              <div className="space-y-4 rounded-xl border border-gray-200 bg-white p-4 lg:p-6 shadow-sm">
                 <label className="block space-y-1">
                   <span className="text-xs font-medium uppercase tracking-wide text-gray-500">
                     Title
@@ -794,7 +827,9 @@ export default function ArticlesPage() {
                   </span>
 
                   <div className="overflow-hidden rounded-lg border border-gray-300">
-                    <div className="flex flex-wrap gap-2 border-b border-gray-200 bg-gray-50 p-2">
+                    <div
+                      onMouseDown={(event) => event.preventDefault()}
+                      className="flex flex-wrap gap-2 border-b border-gray-200 bg-gray-50 p-2">
                       <button
                         type="button"
                         onClick={() => runEditorCommand("bold")}
@@ -866,6 +901,7 @@ export default function ArticlesPage() {
                       suppressContentEditableWarning
                       role="textbox"
                       aria-multiline="true"
+                      aria-label="Article content"
                       onInput={syncContentFromEditor}
                       className="min-h-[420px] whitespace-pre-wrap px-3 py-3 text-sm leading-7 text-gray-900 outline-none"
                     />
@@ -873,7 +909,7 @@ export default function ArticlesPage() {
                 </div>
               </div>
             ) : (
-              <div className="space-y-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
+              <div className="space-y-6 rounded-xl border border-gray-200 bg-white p-4 lg:p-6 shadow-sm">
                 <div className="grid gap-4 md:grid-cols-2">
                   <label className="space-y-1">
                     <span className="text-xs font-medium uppercase tracking-wide text-gray-500">

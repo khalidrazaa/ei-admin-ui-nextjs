@@ -19,7 +19,7 @@ export default function Toast({ message, type = "info", onClose }: Props) {
         : "border-gray-200 bg-white text-gray-800";
 
   return (
-    <div className="pointer-events-none fixed right-6 top-20 z-50 max-w-sm">
+    <div role="status" className="pointer-events-none fixed left-4 right-4 top-20 z-50 sm:left-auto sm:right-6 sm:max-w-sm">
       <div className={`pointer-events-auto rounded-xl border px-4 py-3 shadow-lg ${tone}`}>
         <div className="flex items-start gap-3">
           <div className="min-w-0 flex-1 text-sm">{message}</div>

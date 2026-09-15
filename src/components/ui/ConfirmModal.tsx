@@ -43,7 +43,7 @@ export default function ConfirmModal({
 
   return (
     <div
-      className="fixed inset-0 flex items-center justify-center z-50"
+      role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 flex items-center justify-center z-50 p-4"
     >
       {/* overlay */}
       <div
@@ -52,7 +52,7 @@ export default function ConfirmModal({
       />
 
       {/* modal */}
-    <div className="relative bg-white rounded-lg shadow-lg w-[360px] p-6 animate-modal">
+    <div className="relative bg-white rounded-lg shadow-lg w-[360px] max-w-full max-h-[90dvh] overflow-y-auto p-6 animate-modal">
         <h2 className="text-lg font-semibold mb-2">
           {title}
         </h2>

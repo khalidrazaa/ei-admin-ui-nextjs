@@ -93,7 +93,7 @@ export default function TrendsPage() {
     >
       <>
         {/* Top row with two sections */}
-        <div className="flex justify-between gap-6 mb-6">
+        <div className="flex flex-col lg:flex-row justify-between gap-6 mb-6">
           {/* Scrape Trends Section */}
           <div className="flex flex-col">
             <div className="flex items-center gap-2">
@@ -169,6 +169,7 @@ export default function TrendsPage() {
         </div>
         <div>
           <h2 className="text-lg font-semibold mb-2">Trends Data</h2>
+          <div className="overflow-x-auto">
           <table className="min-w-full border-collapse border border-gray-300">
             <thead>
               <tr>
@@ -224,6 +225,7 @@ export default function TrendsPage() {
               )}
             </tbody>
           </table>
+          </div>
         </div>
       </>
     </ProtectedPageShell>
