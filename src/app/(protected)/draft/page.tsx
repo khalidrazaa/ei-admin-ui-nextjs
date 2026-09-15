@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { ChevronRight } from "lucide-react";
+
 import ProtectedPageShell from "@/components/layout/ProtectedPageShell";
 import Toast from "@/components/ui/Toast";
 import {
@@ -58,6 +60,7 @@ export default function DraftPage() {
   const [loading, setLoading] = useState(true);
   const [selectedVideoId, setSelectedVideoId] = useState<number | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
   const [mode, setMode] = useState<TranscriptMode>("existing");
   const [transcript, setTranscript] = useState<VideoTranscript | null>(null);
   const [transcriptLoading, setTranscriptLoading] = useState(false);
@@ -95,16 +98,6 @@ export default function DraftPage() {
       categoryA.localeCompare(categoryB)
     );
   }, [videos]);
-
-  const selectedCategoryVideos = useMemo(() => {
-    if (!selectedCategory) {
-      return [];
-    }
-
-    return videos.filter(
-      (video) => (video.category_title || "Uncategorized") === selectedCategory
-    );
-  }, [selectedCategory, videos]);
 
   const loadTranscriptVideos = useCallback(async (preferredVideoId?: number) => {
     try {
@@ -160,7 +153,9 @@ export default function DraftPage() {
       return;
     }
 
-    setSelectedCategory(selectedVideo.category_title || "Uncategorized");
+    const category = selectedVideo.category_title || "Uncategorized";
+    setSelectedCategory(category);
+    setExpandedCategories((current) => new Set(current).add(category));
   }, [selectedVideo]);
 
   useEffect(() => {
@@ -300,101 +295,74 @@ export default function DraftPage() {
             </div>
           ) : (
             <div className="space-y-2">
-              {groupedVideos.map(([category, categoryVideos]) => (
-                <button
-                  key={category}
-                  onClick={() => {
-                    setMode("existing");
-                    setSelectedCategory(category);
-                    setSelectedVideoId(categoryVideos[0]?.id ?? null);
-                  }}
-                  className={`flex w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left text-sm transition ${
-                    mode === "existing" && selectedCategory === category
-                      ? "border-blue-400 bg-blue-50 text-blue-700"
-                      : "border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
-                  }`}
-                >
-                  <span className="truncate font-medium">{category}</span>
-                  <span className="shrink-0 text-xs text-gray-400">
-                    {categoryVideos.length}
-                  </span>
-                </button>
-              ))}
+              {groupedVideos.map(([category, categoryVideos], index) => {
+                const expanded = expandedCategories.has(category);
+                const categoryId = "draft-category-" + index;
+
+                return (
+                  <div key={category} className="overflow-hidden rounded-lg border border-gray-200">
+                    <button
+                      type="button"
+                      aria-expanded={expanded}
+                      aria-controls={categoryId}
+                      onClick={() => {
+                        setExpandedCategories((current) => {
+                          const next = new Set(current);
+                          if (next.has(category)) next.delete(category);
+                          else next.add(category);
+                          return next;
+                        });
+                      }}
+                      className="flex w-full items-center gap-2 bg-gray-50 px-3 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                    >
+                      <ChevronRight
+                        aria-hidden="true"
+                        className={"h-4 w-4 shrink-0 transition-transform " + (expanded ? "rotate-90" : "")}
+                      />
+                      <span className="min-w-0 flex-1 truncate font-medium">{category}</span>
+                      <span className="shrink-0 text-xs text-gray-500">{categoryVideos.length}</span>
+                    </button>
+                    <div id={categoryId} hidden={!expanded} className="space-y-1 border-t border-gray-200 p-2">
+                      {categoryVideos.map((video) => {
+                        const isActive = mode === "existing" && selectedVideoId === video.id;
+
+                        return (
+                          <button
+                            key={video.id}
+                            type="button"
+                            aria-current={isActive ? "true" : undefined}
+                            onClick={() => {
+                              setMode("existing");
+                              setSelectedVideoId(video.id);
+                            }}
+                            className={"w-full rounded-lg border p-3 text-left transition " + (
+                              isActive
+                                ? "border-blue-400 bg-blue-50"
+                                : "border-transparent bg-white hover:bg-gray-50"
+                            )}
+                          >
+                            <div className="line-clamp-2 text-sm font-medium text-gray-900">{video.title}</div>
+                            <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-500">
+                              <span className="rounded-full bg-gray-100 px-2 py-0.5">
+                                {video.source === "MANUAL" ? "manual" : video.trend_stage || "watchlist"}
+                              </span>
+                              {video.source !== "MANUAL" ? (
+                                <span>Score {formatFixedNumber(video.virality_score, 1)}</span>
+                              ) : null}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
       }
-      contentClassName="flex-1 overflow-y-auto p-4"
+      contentClassName="min-w-0 flex-1 overflow-y-auto p-4"
     >
-      <div className="grid gap-4 xl:grid-cols-[300px_minmax(0,1fr)]">
-        <div className="flex min-h-[calc(100vh-120px)] flex-col rounded-xl border border-gray-200 bg-white shadow-sm">
-          <div className="border-b border-gray-200 px-4 py-3">
-            <h2 className="text-sm font-semibold text-gray-900">
-              {mode === "manual"
-                ? "New Transcript"
-                : selectedCategory || "Select a category"}
-            </h2>
-            <p className="mt-1 text-xs text-gray-500">
-              {mode === "manual"
-                ? "Fill the form on the right"
-                : `${selectedCategoryVideos.length} transcript${
-                    selectedCategoryVideos.length === 1 ? "" : "s"
-                  }`}
-            </p>
-          </div>
-
-          <div className="min-h-0 flex-1 overflow-y-auto p-3">
-            {mode === "manual" ? (
-              <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500">
-                Create and save a manual transcript from the main panel.
-              </div>
-            ) : loading ? (
-              <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500">
-                Loading transcripts...
-              </div>
-            ) : selectedCategoryVideos.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500">
-                No transcripts in this category.
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {selectedCategoryVideos.map((video) => {
-                  const isActive = selectedVideoId === video.id;
-
-                  return (
-                    <button
-                      key={video.id}
-                      onClick={() => {
-                        setMode("existing");
-                        setSelectedVideoId(video.id);
-                      }}
-                      className={`w-full rounded-xl border p-3 text-left transition ${
-                        isActive
-                          ? "border-blue-400 bg-blue-50"
-                          : "border-gray-200 bg-white hover:bg-gray-50"
-                      }`}
-                    >
-                      <div className="line-clamp-2 text-sm font-medium text-gray-900">
-                        {video.title}
-                      </div>
-                      <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-500">
-                        <span className="rounded-full bg-gray-100 px-2 py-0.5">
-                          {video.source === "MANUAL"
-                            ? "manual"
-                            : video.trend_stage || "watchlist"}
-                        </span>
-                        {video.source !== "MANUAL" ? (
-                          <span>Score {formatFixedNumber(video.virality_score, 1)}</span>
-                        ) : null}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-
         <div className="flex min-h-[calc(100vh-120px)] min-w-0 flex-col gap-4">
           <div className="flex min-h-[560px] flex-col rounded-xl border border-gray-200 bg-white shadow-sm">
           <div className="border-b border-gray-200 px-5 py-4">
@@ -614,7 +582,6 @@ export default function DraftPage() {
           </div>
           </div>
         </div>
-      </div>
 
       <Toast
         message={message}

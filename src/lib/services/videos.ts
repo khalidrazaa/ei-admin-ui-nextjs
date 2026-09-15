@@ -55,7 +55,7 @@ export async function saveVideoTranscript(
   videoId: number,
   transcriptText: string
 ): Promise<PopularVideo> {
-  return apiFetch(`/admin/youtube-scan/videos/${videoId}/transcript`, {
+  return apiFetch(`/admin/videos/transcript/${videoId}`, {
     method: "POST",
     body: JSON.stringify({
       transcript_text: transcriptText,
@@ -66,7 +66,7 @@ export async function saveVideoTranscript(
 export async function getVideoTranscript(
   videoId: number
 ): Promise<VideoTranscript> {
-  return apiFetch(`/admin/youtube-scan/videos/${videoId}/transcript`, {
+  return apiFetch(`/admin/videos/transcript/${videoId}`, {
     method: "GET",
   }) as Promise<VideoTranscript>;
 }
@@ -74,7 +74,7 @@ export async function getVideoTranscript(
 export async function generateDraftArticle(
   videoId: number
 ): Promise<Article> {
-  return apiFetch(`/admin/youtube-scan/videos/${videoId}/draft-article`, {
+  return apiFetch(`/admin/articles/draft-article/${videoId}`, {
     method: "POST",
   }) as Promise<Article>;
 }
