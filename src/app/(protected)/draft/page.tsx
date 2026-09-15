@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 
 import ProtectedPageShell from "@/components/layout/ProtectedPageShell";
@@ -13,10 +12,10 @@ import {
   getDraftTranscript,
   getTranscriptVideos,
 } from "@/lib/services/drafts";
+import { saveVideoTranscript } from "@/lib/services/videos";
 import { getDraftPrompts } from "@/lib/services/draft-prompts";
 import { formatCompactNumber, formatFixedNumber } from "@/lib/utils/formatters";
 import {
-  Article,
   DraftPrompt,
   DraftProvider,
   PopularVideo,
@@ -65,6 +64,9 @@ export default function DraftPage() {
   const [mode, setMode] = useState<TranscriptMode>("existing");
   const [transcript, setTranscript] = useState<VideoTranscript | null>(null);
   const [transcriptLoading, setTranscriptLoading] = useState(false);
+  const [editedTranscript, setEditedTranscript] = useState("");
+  const [savingTranscript, setSavingTranscript] = useState(false);
+  const transcriptChanged = transcript !== null && editedTranscript !== transcript.transcript_text;
   const [manualTitle, setManualTitle] = useState("");
   const [manualCategory, setManualCategory] = useState("");
   const [manualTranscript, setManualTranscript] = useState("");
@@ -76,7 +78,6 @@ export default function DraftPage() {
   const [prompt, setPrompt] = useState("");
   const [additionalContext, setAdditionalContext] = useState(DEFAULT_ADDITIONAL_INPUT);
   const [generating, setGenerating] = useState(false);
-  const [latestArticle, setLatestArticle] = useState<Article | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [messageType, setMessageType] = useState<"success" | "error" | "info" | null>(
     null
@@ -166,22 +167,30 @@ export default function DraftPage() {
     }
 
     const videoId = selectedVideoId;
+    let cancelled = false;
+    setTranscript(null);
+    setEditedTranscript("");
 
     async function loadTranscript() {
       try {
         setTranscriptLoading(true);
         const data = await getDraftTranscript(videoId);
-        setTranscript(data);
+        if (!cancelled) {
+          setTranscript(data);
+          setEditedTranscript(data.transcript_text);
+        }
       } catch (err) {
+        if (cancelled) return;
         console.error("Failed to load transcript", err);
         setMessage(err instanceof Error ? err.message : "Failed to load transcript");
         setMessageType("error");
       } finally {
-        setTranscriptLoading(false);
+        if (!cancelled) setTranscriptLoading(false);
       }
     }
 
     void loadTranscript();
+    return () => { cancelled = true; };
   }, [mode, selectedVideoId]);
 
   useEffect(() => {
@@ -197,6 +206,29 @@ export default function DraftPage() {
     return () => window.clearTimeout(timeout);
   }, [message, messageType]);
 
+  async function persistTranscript() {
+    if (!selectedVideoId || !transcript || !editedTranscript.trim()) {
+      throw new Error("Transcript cannot be empty.");
+    }
+    const video = await saveVideoTranscript(selectedVideoId, editedTranscript);
+    setVideos((current) => current.map((item) => item.id === video.id ? video : item));
+    setTranscript((current) => current ? { ...current, transcript_text: editedTranscript } : current);
+  }
+
+  async function handleSaveTranscript() {
+    try {
+      setSavingTranscript(true);
+      await persistTranscript();
+      setMessage("Transcript saved.");
+      setMessageType("success");
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Failed to save transcript");
+      setMessageType("error");
+    } finally {
+      setSavingTranscript(false);
+    }
+  }
+
   async function handleGenerateDraft() {
     if (mode !== "existing" || !selectedVideoId) {
       return;
@@ -204,6 +236,7 @@ export default function DraftPage() {
 
     try {
       setGenerating(true);
+      if (transcriptChanged) await persistTranscript();
       setMessage(`Generating draft with ${provider === "chatgpt" ? "ChatGPT" : "Gemini"}...`);
       setMessageType("info");
 
@@ -213,7 +246,6 @@ export default function DraftPage() {
         additional_context: additionalContext.trim() || undefined,
       });
 
-      setLatestArticle(article);
       setMessage(`Draft saved: ${article.title}`);
       setMessageType("success");
     } catch (err) {
@@ -272,6 +304,7 @@ export default function DraftPage() {
       sidebar={
         <div className="space-y-4">
           <button
+            disabled={savingTranscript || generating}
             onClick={() => {
               setMode("manual");
               setSelectedVideoId(null);
@@ -332,6 +365,7 @@ export default function DraftPage() {
                           <button
                             key={video.id}
                             type="button"
+                            disabled={savingTranscript || generating}
                             aria-current={isActive ? "true" : undefined}
                             onClick={() => {
                               setMode("existing");
@@ -444,8 +478,25 @@ export default function DraftPage() {
                 Loading transcript...
               </div>
             ) : transcript ? (
-              <div className="whitespace-pre-wrap rounded-xl border border-gray-200 bg-gray-50 px-4 py-4 text-sm leading-7 text-gray-700">
-                {transcript.transcript_text}
+              <div className="space-y-4">
+                <label htmlFor="draft-transcript" className="block text-sm font-medium text-gray-700">Transcript</label>
+                <textarea
+                  id="draft-transcript"
+                  value={editedTranscript}
+                  onChange={(e) => setEditedTranscript(e.target.value)}
+                  disabled={savingTranscript || generating}
+                  className="min-h-[50dvh] lg:min-h-[420px] w-full rounded-xl border border-gray-200 bg-gray-50 px-4 py-4 text-sm leading-7 text-gray-700 disabled:opacity-60"
+                />
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    onClick={() => void handleSaveTranscript()}
+                    disabled={!transcriptChanged || !editedTranscript.trim() || savingTranscript || generating}
+                    className="w-full lg:w-auto rounded-lg border border-blue-600 bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {savingTranscript ? "Saving..." : "Save Transcript"}
+                  </button>
+                  {transcriptChanged ? <span className="text-sm text-gray-500">Unsaved changes</span> : null}
+                </div>
               </div>
             ) : (
               <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500">
@@ -455,7 +506,7 @@ export default function DraftPage() {
           </div>
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.8fr)]">
+          <div className="grid gap-4">
           <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
             <h3 className="text-base font-semibold text-gray-900">Draft Settings</h3>
             <div className="mt-4 space-y-4">
@@ -538,7 +589,7 @@ export default function DraftPage() {
 
               <button
                 onClick={() => void handleGenerateDraft()}
-                disabled={mode !== "existing" || !selectedVideoId || !transcript || generating}
+                disabled={mode !== "existing" || !selectedVideoId || !transcript || transcriptLoading || !editedTranscript.trim() || savingTranscript || generating}
                 className="w-full lg:w-auto rounded-lg border border-emerald-600 bg-emerald-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {generating ? "Generating Draft..." : "Create Draft"}
@@ -546,43 +597,6 @@ export default function DraftPage() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-gray-200 bg-white p-5 shadow-sm">
-            <h3 className="text-base font-semibold text-gray-900">Latest Saved Draft</h3>
-            {latestArticle ? (
-              <div className="mt-4 space-y-3">
-                <Link href={"/articles?article=" + latestArticle.id} className="flex min-h-11 items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">Review & Publish</Link>
-                <div>
-                  <div className="text-sm font-medium text-gray-900">{latestArticle.title}</div>
-                  <div className="mt-1 text-xs text-gray-500">{latestArticle.slug}</div>
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-lg bg-gray-50 p-3 text-sm text-gray-600">
-                    <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
-                      Status
-                    </div>
-                    <div className="mt-1 capitalize">{latestArticle.status}</div>
-                  </div>
-                  <div className="rounded-lg bg-gray-50 p-3 text-sm text-gray-600">
-                    <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
-                      Category
-                    </div>
-                    <div className="mt-1">{latestArticle.category || "-"}</div>
-                  </div>
-                </div>
-                <div className="rounded-lg bg-gray-50 p-3 text-sm text-gray-700">
-                  <div className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">
-                    Excerpt
-                  </div>
-                  <div>{latestArticle.excerpt || "No excerpt generated."}</div>
-                </div>
-              </div>
-            ) : (
-              <div className="mt-4 rounded-xl border border-dashed border-gray-300 bg-gray-50 px-4 py-6 text-sm text-gray-500">
-                Generate a draft and it will show up here after being saved to
-                articles.
-              </div>
-            )}
-          </div>
           </div>
         </div>
 
