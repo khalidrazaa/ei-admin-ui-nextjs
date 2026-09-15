@@ -40,3 +40,57 @@ body {
 .animate-modal {
   animation: modalFade 0.15s ease-out;
 }
+/* Document scrolling keeps mobile editors usable with the keyboard open. */
+@media (max-width: 1023px) {
+  .protected-shell {
+    height: auto;
+    min-height: calc(100dvh - 56px);
+    overflow: visible;
+    flex-direction: column;
+  }
+
+  .protected-shell > .page-sidebar {
+    display: none;
+    width: 100% !important;
+    visibility: visible !important;
+    border-right: 0;
+    border-bottom: 1px solid #e5e7eb;
+    padding: 1rem;
+  }
+
+  .protected-shell > .page-sidebar[data-mobile-open="true"] {
+    display: flex;
+    max-height: 65dvh;
+  }
+
+  .page-content {
+    overflow: visible;
+    padding: 1rem;
+    overflow-wrap: anywhere;
+  }
+
+  .protected-shell input:not([type="checkbox"]):not([type="radio"]),
+  .protected-shell select,
+  .protected-shell textarea,
+  .protected-shell [role="textbox"],
+  [role="dialog"] [role="textbox"] {
+    max-width: 100%;
+    font-size: 16px;
+  }
+
+  .protected-shell button,
+  .protected-shell select,
+  .protected-shell input:not([type="checkbox"]):not([type="radio"]),
+  [role="dialog"] button {
+    min-height: 44px;
+  }
+
+  .page-content [contenteditable] img {
+    max-width: 100%;
+    height: auto;
+  }
+
+  .page-content [contenteditable] {
+    overflow-wrap: anywhere;
+  }
+}

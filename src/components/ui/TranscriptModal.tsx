@@ -79,15 +79,15 @@ export default function TranscriptModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+    <div role="dialog" aria-modal="true" aria-label="Edit transcript" className="fixed inset-0 z-50 flex items-center justify-center px-2 sm:px-4">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative flex max-h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
-        <div className="border-b border-gray-200 px-6 py-4">
+      <div className="relative flex max-h-[90dvh] sm:max-h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="shrink-0 border-b border-gray-200 px-4 sm:px-6 py-4">
           <h2 className="text-lg font-semibold text-gray-900">{transcript.title}</h2>
 
         </div>
 
-        <div className="overflow-y-auto px-6 py-5">
+        <div className="min-h-0 overflow-y-auto px-4 sm:px-6 py-5">
 
 
           {loadingTranscript ? (
@@ -101,6 +101,7 @@ export default function TranscriptModal({
               suppressContentEditableWarning
               role="textbox"
               aria-multiline="true"
+              aria-label="Transcript"
               onInput={(event) => {
                 setDraftText(
                   normalizeTranscriptText(event.currentTarget.innerText || "")
@@ -117,7 +118,7 @@ export default function TranscriptModal({
           ) : null}
         </div>
 
-        <div className="flex justify-end gap-3 border-t border-gray-200 px-6 py-4">
+        <div className="flex shrink-0 flex-wrap justify-end gap-2 sm:gap-3 border-t border-gray-200 px-4 sm:px-6 py-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
           <button
             onClick={() => onSaveTranscript(draftText)}
             disabled={loadingTranscript || savingTranscript || !hasDraftText || !isDirty}

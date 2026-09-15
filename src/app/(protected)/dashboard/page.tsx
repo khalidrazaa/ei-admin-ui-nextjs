@@ -16,10 +16,10 @@ export default function DashboardPage() {
           and curate generated articles.
         </div>
       }
-      contentClassName="flex-1 overflow-y-auto p-8"
+      contentClassName="flex-1 overflow-y-auto p-4 lg:p-8"
     >
       {/* Header */}
-      <header className="flex justify-between items-center mb-8">
+      <header className="flex flex-wrap gap-3 justify-between items-center mb-8">
         <h1 className="text-2xl font-bold">Admin Dashboard</h1>
       </header>
 
