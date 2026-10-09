@@ -324,3 +324,56 @@ export interface ApiVideosResponse {
 }
 
 export type PopularVideoFilters = VideoListParams;
+
+export type LeadStatus =
+  | "new"
+  | "contacted"
+  | "qualified"
+  | "proposal"
+  | "won"
+  | "lost"
+  | "spam";
+
+export interface Lead {
+  id: number;
+  name: string;
+  email: string;
+  phone: string | null;
+  subject: string | null;
+  message: string;
+  host_site: string;
+  landing_page: string | null;
+  referrer: string | null;
+  utm_source: string | null;
+  utm_medium: string | null;
+  utm_campaign: string | null;
+  utm_term: string | null;
+  utm_content: string | null;
+  status: LeadStatus;
+  internal_notes: string;
+  submitted_at: string;
+  updated_at: string;
+}
+
+export interface LeadListParams {
+  page?: number;
+  size?: number;
+  search?: string;
+  status?: LeadStatus;
+  source?: string;
+}
+
+export interface LeadsResponse {
+  items: Lead[];
+  total: number;
+  page: number;
+  size: number;
+  total_pages: number;
+  has_next: boolean;
+  has_previous: boolean;
+}
+
+export interface LeadUpdate {
+  status?: LeadStatus;
+  internal_notes?: string;
+}

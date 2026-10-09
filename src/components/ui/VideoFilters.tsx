@@ -240,6 +240,7 @@ export default function VideoFilters({
 
 type VideoPaginationControlsProps = {
   pagination: VideosPagination;
+  itemLabel?: string;
   pageSize?: number;
   disabled?: boolean;
   onPageChange: (page: number) => void;
@@ -248,6 +249,7 @@ type VideoPaginationControlsProps = {
 
 export function VideoPaginationControls({
   pagination,
+  itemLabel = "videos",
   pageSize = pagination.size,
   disabled = false,
   onPageChange,
@@ -266,7 +268,7 @@ export function VideoPaginationControls({
         <p>
           Showing <span className="font-medium text-gray-700">{firstItem}</span> to{" "}
           <span className="font-medium text-gray-700">{lastItem}</span> of{" "}
-          <span className="font-medium text-gray-700">{pagination.total}</span> videos
+          <span className="font-medium text-gray-700">{pagination.total}</span> {itemLabel}
         </p>
 
         {onPageSizeChange ? (

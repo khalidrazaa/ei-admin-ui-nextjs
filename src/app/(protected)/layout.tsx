@@ -19,7 +19,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     { name: "Niches", href: "/niches" },
     { name: "Youtube Popular", href: "/youtube-popular" },
     { name: "Draft", href: "/draft" },
-    { name: "Articles", href: "/articles" }
+    { name: "Articles", href: "/articles" },
+    { name: "Leads", href: "/leads" }
   ];
 
   const handleLogout = async () => {

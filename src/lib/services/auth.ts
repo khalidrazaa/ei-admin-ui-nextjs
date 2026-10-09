@@ -16,8 +16,9 @@ export type VerifyOtpRequest = {
 };
 
 export type VerifyOtpResponse = {
-  access_token: string;
+  status: boolean;
   token_type: string;
+  message: string;
 };
 
 // ✅ Functions

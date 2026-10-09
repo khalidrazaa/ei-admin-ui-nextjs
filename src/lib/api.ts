@@ -10,6 +10,26 @@ export class ApiError extends Error {
 }
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "";
+let loginRecovery: Promise<boolean> | undefined;
+
+function clearSessionAndReturnToLogin(): Promise<boolean> {
+  if (!loginRecovery) {
+    loginRecovery = (async () => {
+      try {
+        await apiFetch("/auth/logout", {
+          method: "POST",
+          signal: AbortSignal.timeout(5000),
+        });
+        window.location.replace("/login");
+        return true;
+      } catch {
+        return false;
+      }
+    })();
+  }
+
+  return loginRecovery;
+}
 
 export async function apiFetch<T>(
   endpoint: string,
@@ -21,11 +41,8 @@ export async function apiFetch<T>(
       "Content-Type": "application/json",
       ...(options.headers || {}),
     },
-    credentials: "include", // ✅ send cookies (important for auth)
+    credentials: "include",
   });
-
-    console.log("Fetching videos with endpoint:");
-    console.log(endpoint);
 
   let data: unknown;
   try {
@@ -44,6 +61,19 @@ export async function apiFetch<T>(
       typeof (data as Record<string, unknown>).detail === "string"
     ) {
       message = (data as Record<string, unknown>).detail as string;
+    }
+
+    if (
+      res.status === 401 &&
+      !/^\/auth(?:\/|\?|$)/.test(endpoint) &&
+      typeof window !== "undefined" &&
+      window.location.pathname !== "/login"
+    ) {
+      const cleared = await clearSessionAndReturnToLogin();
+      if (!cleared) {
+        message +=
+          " Your session could not be cleared. Reload and try signing out, or clear this site's cookies before signing in again.";
+      }
     }
 
     throw new ApiError(message, res.status, data);
