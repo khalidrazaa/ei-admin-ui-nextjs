@@ -16,6 +16,7 @@ export async function getTranscriptVideos(): Promise<PopularVideo[]> {
 export async function getDraftTranscript(videoId: number): Promise<VideoTranscript> {
   return apiFetch(`/admin/videos/transcript/${videoId}`, {
     method: "GET",
+    timeoutMs: 0,
   }) as Promise<VideoTranscript>;
 }
 
@@ -34,6 +35,7 @@ export async function generateDraftFromTranscript(
 ): Promise<Article> {
   return apiFetch(`/admin/articles/draft-article/${videoId}`, {
     method: "POST",
+    timeoutMs: 0,
     body: JSON.stringify(payload),
   }) as Promise<Article>;
 }

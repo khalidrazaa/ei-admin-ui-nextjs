@@ -1,5 +1,5 @@
 import { apiFetch } from "@/lib/api";
-import { ScrapeTrendsResponse, ScrapeYTResponse } from "@/types/types";
+import { ScrapeYTResponse } from "@/types/types";
 
 
 export interface Keyword {
@@ -82,6 +82,7 @@ export async function scanNicheYouTube(
     `/admin/yt-scan/niches/${nicheId}`,
     {
       method: "GET",
+      timeoutMs: 0,
     }
   );
 }

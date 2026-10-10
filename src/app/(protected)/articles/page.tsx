@@ -3,8 +3,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import ProtectedPageShell from "@/components/layout/ProtectedPageShell";
+import Button from "@/components/ui/Button";
+import ConfirmModal from "@/components/ui/ConfirmModal";
 import Toast from "@/components/ui/Toast";
-import { getArticle, getArticles, updateArticle } from "@/lib/services/articles";
+import {
+  deleteArticle,
+  deleteArticles,
+  getArticle,
+  getArticles,
+  updateArticle,
+} from "@/lib/services/articles";
 import { getHostSites } from "@/lib/services/host-sites";
 import { Article } from "@/types/types";
 
@@ -336,10 +344,20 @@ function toUpdatePayload(form: ArticleEditorForm, contentHtml: string): Partial<
 export default function ArticlesPage() {
   const [articles, setArticles] = useState<Article[]>([]);
   const [loadingList, setLoadingList] = useState(true);
+  const [listReloadVersion, setListReloadVersion] = useState(0);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
+  const [selectedArticleIds, setSelectedArticleIds] = useState<Set<number>>(new Set());
+  const [deleting, setDeleting] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{
+    articleIds: number[];
+    message: string;
+  } | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [selectedArticleId, setSelectedArticleId] = useState<number | null>(null);
   const [editorStep, setEditorStep] = useState<EditorStep>(1);
   const [loadingArticle, setLoadingArticle] = useState(false);
+  const [articleLoadError, setArticleLoadError] = useState<string | null>(null);
+  const [articleReloadVersion, setArticleReloadVersion] = useState(0);
   const [saving, setSaving] = useState(false);
   const [editorForm, setEditorForm] = useState<ArticleEditorForm>(EMPTY_FORM);
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
@@ -351,17 +369,9 @@ export default function ArticlesPage() {
   const [hostSiteOptions, setHostSiteOptions] = useState<string[]>([DEFAULT_HOST_SITE]);
   const contentEditorRef = useRef<HTMLDivElement | null>(null);
   const contentHtmlRef = useRef<string>("");
-
-  const articleSummary = useMemo(() => {
-    const drafts = articles.filter((article) => article.status === "draft").length;
-    const published = articles.filter((article) => article.status === "published").length;
-
-    return {
-      total: articles.length,
-      drafts,
-      published,
-    };
-  }, [articles]);
+  const selectAllRef = useRef<HTMLInputElement | null>(null);
+  const deletionInProgressRef = useRef(false);
+  const deletionControlsDisabled = deleting || deleteTarget !== null;
 
   const categoryStats = useMemo(() => {
     const counts = new Map<string, number>();
@@ -375,6 +385,17 @@ export default function ArticlesPage() {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [articles]);
 
+  useEffect(() => {
+    if (
+      !loadingList &&
+      selectedCategory !== "all" &&
+      !categoryStats.some((item) => item.name === selectedCategory)
+    ) {
+      setSelectedCategory("all");
+      setSelectedArticleIds(new Set());
+    }
+  }, [categoryStats, selectedCategory, loadingList]);
+
   const filteredArticles = useMemo(() => {
     if (selectedCategory === "all") {
       return articles;
@@ -384,6 +405,18 @@ export default function ArticlesPage() {
     );
   }, [articles, selectedCategory]);
 
+  const selectedVisibleIds = filteredArticles
+    .filter((article) => selectedArticleIds.has(article.id))
+    .map((article) => article.id);
+  const selectedCount = selectedVisibleIds.length;
+  const allArticlesSelected = filteredArticles.length > 0 && selectedCount === filteredArticles.length;
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = selectedCount > 0 && !allArticlesSelected;
+    }
+  }, [selectedCount, allArticlesSelected, selectedArticleId, loadingList]);
+
   const resolvedHostSiteOptions = useMemo(() => {
     const merged = Array.from(new Set([editorForm.host_site.trim(), ...hostSiteOptions])).filter(
       Boolean
@@ -392,24 +425,29 @@ export default function ArticlesPage() {
   }, [editorForm.host_site, hostSiteOptions]);
 
   useEffect(() => {
+    let cancelled = false;
     async function loadArticles() {
       try {
         setLoadingList(true);
-        const data = await getArticles();
+        setError(null);
+        const data = await getArticles("published");
+        if (cancelled) return;
         setArticles(data);
         setError(null);
         const requestedId = Number(new URLSearchParams(window.location.search).get("article"));
         if (requestedId > 0 && Number.isSafeInteger(requestedId)) setSelectedArticleId(requestedId);
       } catch (err) {
+        if (cancelled) return;
         console.error("Failed to load articles", err);
-        setError("Failed to load articles");
+        setError(err instanceof Error ? err.message : "Failed to load articles.");
       } finally {
-        setLoadingList(false);
+        if (!cancelled) setLoadingList(false);
       }
     }
 
     void loadArticles();
-  }, []);
+    return () => { cancelled = true; };
+  }, [listReloadVersion]);
 
   useEffect(() => {
     async function loadHostSites() {
@@ -429,6 +467,7 @@ export default function ArticlesPage() {
   useEffect(() => {
     if (selectedArticleId === null) {
       setSelectedArticle(null);
+      setArticleLoadError(null);
       setEditorForm(EMPTY_FORM);
       contentHtmlRef.current = "";
       if (contentEditorRef.current) {
@@ -438,24 +477,29 @@ export default function ArticlesPage() {
     }
 
     const articleId = selectedArticleId;
+    let cancelled = false;
 
     async function loadArticle() {
       try {
         setLoadingArticle(true);
+        setArticleLoadError(null);
+        setSelectedArticle(null);
         const article = await getArticle(articleId);
+        if (cancelled) return;
         setSelectedArticle(article);
         setEditorForm(toEditorForm(article));
       } catch (err) {
+        if (cancelled) return;
         console.error("Failed to load article", err);
-        setMessage(err instanceof Error ? err.message : "Failed to load article");
-        setMessageType("error");
+        setArticleLoadError(err instanceof Error ? err.message : "Failed to load article.");
       } finally {
-        setLoadingArticle(false);
+        if (!cancelled) setLoadingArticle(false);
       }
     }
 
     void loadArticle();
-  }, [selectedArticleId]);
+    return () => { cancelled = true; };
+  }, [selectedArticleId, articleReloadVersion]);
 
   useEffect(() => {
     const editor = contentEditorRef.current;
@@ -537,6 +581,7 @@ export default function ArticlesPage() {
   }
 
   function openEditor(articleId: number) {
+    if (deletionInProgressRef.current || deleteTarget) return;
     setSelectedArticleId(articleId);
     setEditorStep(1);
   }
@@ -544,6 +589,80 @@ export default function ArticlesPage() {
   function closeEditor() {
     setSelectedArticleId(null);
     setEditorStep(1);
+  }
+
+  function selectCategory(category: string) {
+    if (deletionInProgressRef.current || deleteTarget) return;
+    setSelectedCategory(category);
+    setSelectedArticleIds(new Set());
+  }
+
+  function toggleArticleSelection(articleId: number) {
+    if (deletionInProgressRef.current || deleteTarget) return;
+    setSelectedArticleIds((current) => {
+      const next = new Set(current);
+      if (next.has(articleId)) next.delete(articleId);
+      else next.add(articleId);
+      return next;
+    });
+  }
+
+  function toggleAllArticles() {
+    if (deletionInProgressRef.current || deleteTarget) return;
+    setSelectedArticleIds(
+      allArticlesSelected ? new Set() : new Set(filteredArticles.map((article) => article.id))
+    );
+  }
+
+  function requestDelete(articleIds: number[]) {
+    if (deletionInProgressRef.current || deleteTarget || articleIds.length === 0) return;
+
+    const article = articles.find((item) => item.id === articleIds[0]);
+    const target = articleIds.length === 1
+      ? `"${article?.title ?? "this article"}"`
+      : `${articleIds.length} selected articles`;
+    setDeleteError(null);
+    setDeleteTarget({
+      articleIds: [...articleIds],
+      message: `Permanently delete ${target} and any associated comments? This cannot be undone.`,
+    });
+  }
+
+  function cancelDelete() {
+    if (deletionInProgressRef.current) return;
+    setDeleteTarget(null);
+    setDeleteError(null);
+  }
+
+  async function handleDeleteConfirmed() {
+    if (deletionInProgressRef.current || !deleteTarget) return;
+    const articleIds = deleteTarget.articleIds;
+
+    deletionInProgressRef.current = true;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const result = articleIds.length === 1
+        ? await deleteArticle(articleIds[0])
+        : await deleteArticles(articleIds);
+      const deletedIds = new Set(result.deleted_ids);
+      setArticles((current) => current.filter((item) => !deletedIds.has(item.id)));
+      setSelectedArticleIds((current) =>
+        new Set([...current].filter((id) => !deletedIds.has(id)))
+      );
+      setMessage(`${result.deleted_count} article${result.deleted_count === 1 ? "" : "s"} deleted successfully.`);
+      setMessageType("success");
+      setDeleteTarget(null);
+    } catch (err) {
+      console.error("Failed to delete articles", err);
+      const failureMessage = err instanceof Error ? err.message : "Failed to delete articles.";
+      setDeleteError(failureMessage);
+      setMessage(failureMessage);
+      setMessageType("error");
+    } finally {
+      deletionInProgressRef.current = false;
+      setDeleting(false);
+    }
   }
 
   async function handleSave() {
@@ -584,8 +703,19 @@ export default function ArticlesPage() {
       setSelectedArticle(updated);
       setEditorForm(toEditorForm(updated));
       setArticles((current) =>
-        current.map((article) => (article.id === updated.id ? updated : article))
+        updated.status === "published"
+          ? current.map((article) => (article.id === updated.id ? updated : article))
+          : current.filter((article) => article.id !== updated.id)
       );
+      if (updated.status !== "published") {
+        setSelectedArticleIds((current) => {
+          const next = new Set(current);
+          next.delete(updated.id);
+          return next;
+        });
+      } else if (!articles.some((article) => article.id === updated.id)) {
+        setListReloadVersion((current) => current + 1);
+      }
       setMessage("Article updated successfully.");
       setMessageType("success");
     } catch (err) {
@@ -601,38 +731,10 @@ export default function ArticlesPage() {
     <>
       <ProtectedPageShell
         title="Articles"
-        description="Filter by category, browse in a table, then edit in 2 steps."
         sidebarClassName="w-80"
         settingsHref="/settings?tab=host-sites"
         sidebar={
           <div className="space-y-3">
-            <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-              <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
-                Total
-              </div>
-              <div className="mt-2 text-2xl font-semibold text-gray-900">
-                {loadingList ? "..." : articleSummary.total}
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-              <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
-                Draft
-              </div>
-              <div className="mt-2 text-2xl font-semibold text-gray-900">
-                {loadingList ? "..." : articleSummary.drafts}
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
-              <div className="text-xs font-medium uppercase tracking-wide text-gray-500">
-                Published
-              </div>
-              <div className="mt-2 text-2xl font-semibold text-gray-900">
-                {loadingList ? "..." : articleSummary.published}
-              </div>
-            </div>
-
             <div className="rounded-xl border border-gray-200 bg-white p-3">
               <div className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">
                 Categories
@@ -641,7 +743,8 @@ export default function ArticlesPage() {
               <div className="max-h-96 space-y-2 overflow-y-auto">
                 <button
                   type="button"
-                  onClick={() => setSelectedCategory("all")}
+                  onClick={() => selectCategory("all")}
+                  disabled={deletionControlsDisabled}
                   className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm transition ${
                     selectedCategory === "all"
                       ? "border-blue-500 bg-blue-50 text-blue-700"
@@ -656,7 +759,8 @@ export default function ArticlesPage() {
                   <button
                     key={item.name}
                     type="button"
-                    onClick={() => setSelectedCategory(item.name)}
+                    onClick={() => selectCategory(item.name)}
+                    disabled={deletionControlsDisabled}
                     className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm transition ${
                       selectedCategory === item.name
                         ? "border-blue-500 bg-blue-50 text-blue-700"
@@ -678,55 +782,106 @@ export default function ArticlesPage() {
             Loading articles...
           </div>
         ) : error ? (
-          <div className="rounded-xl border border-red-200 bg-red-50 p-6 text-sm text-red-700 shadow-sm">
-            {error}
+          <div role="alert" className="space-y-3 rounded-xl border border-red-200 bg-red-50 p-6 text-sm text-red-700 shadow-sm">
+            <p>{error}</p>
+            <button
+              type="button"
+              onClick={() => setListReloadVersion((version) => version + 1)}
+              className="rounded-lg border border-red-300 bg-white px-3 py-2 font-medium hover:bg-red-100"
+            >
+              Retry
+            </button>
           </div>
         ) : selectedArticleId === null ? (
           <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
-            <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
               <div>
-                <h2 className="text-base font-semibold text-gray-900">Articles</h2>
                 <p className="text-xs text-gray-500">
                   {selectedCategory === "all" ? "All Categories" : selectedCategory} |{" "}
                   {filteredArticles.length} article
                   {filteredArticles.length === 1 ? "" : "s"}
                 </p>
               </div>
+              <div className="flex items-center gap-3">
+                <span aria-live="polite" className="text-xs text-gray-500">{selectedCount} selected</span>
+                <Button
+                  variant="danger"
+                  type="button"
+                  onClick={() => requestDelete(selectedVisibleIds)}
+                  disabled={deletionControlsDisabled || selectedCount === 0}
+                  className="inline-flex items-center justify-center rounded-lg bg-red-600 !px-3 !py-1.5 !text-sm !text-white disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {deleting ? "Deleting..." : "Delete selected"}
+                </Button>
+              </div>
             </div>
 
             {filteredArticles.length === 0 ? (
-              <div className="p-8 text-sm text-gray-500">No articles for this category.</div>
+              <div className="p-8 text-sm text-gray-500">No published articles for this category.</div>
             ) : (
               <>
               <div className="divide-y divide-gray-200 lg:hidden">
                 {filteredArticles.map((article) => (
-                  <button
-                    key={article.id}
-                    type="button"
-                    onClick={() => openEditor(article.id)}
-                    className="block w-full space-y-2 p-4 text-left hover:bg-blue-50/50"
-                  >
-                    <div className="font-medium text-gray-900">{article.title}</div>
-                    <div className="text-xs text-gray-500">{article.slug}</div>
-                    <div className="text-sm text-gray-700">{getPreviewText(article)}</div>
-                    <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500">
-                      <span className="capitalize">{article.status}</span>
-                      <span>{formatDate(article.created_at)}</span>
-                      <span>{article.host_site}</span>
+                  <div key={article.id} className="flex gap-3 p-4">
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${article.title}`}
+                      checked={selectedArticleIds.has(article.id)}
+                      onChange={() => toggleArticleSelection(article.id)}
+                      disabled={deletionControlsDisabled}
+                      className="mt-1 h-4 w-4 shrink-0 rounded border-gray-300 accent-blue-600"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <button
+                        type="button"
+                        onClick={() => openEditor(article.id)}
+                        disabled={deletionControlsDisabled}
+                        className="block w-full space-y-2 text-left hover:bg-blue-50/50"
+                      >
+                        <div className="font-medium text-gray-900">{article.title}</div>
+                        <div className="text-xs text-gray-500">{article.slug}</div>
+                        <div className="text-sm text-gray-700">{getPreviewText(article)}</div>
+                        <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500">
+                          <span className="capitalize">{article.status}</span>
+                          <span>{formatDate(article.created_at)}</span>
+                          <span>{article.host_site}</span>
+                        </div>
+                        <span className="inline-block text-sm font-medium text-blue-700">Edit article</span>
+                      </button>
+                      <Button
+                        variant="danger"
+                        type="button"
+                        aria-label={`Delete ${article.title}`}
+                        onClick={() => requestDelete([article.id])}
+                        disabled={deletionControlsDisabled}
+                        className="mt-3 inline-flex items-center justify-center rounded-lg border border-red-200 !text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        Delete
+                      </Button>
                     </div>
-                    <span className="inline-block text-sm font-medium text-blue-700">Edit article</span>
-                  </button>
+                  </div>
                 ))}
               </div>
               <div className="hidden overflow-x-auto lg:block">
-                <table className="min-w-full divide-y divide-gray-200 text-sm">
+                <table className="min-w-full divide-y divide-gray-200 text-left text-sm">
                   <thead className="bg-gray-50">
                     <tr className="text-left text-gray-600">
-                      <th className="px-4 py-3 font-medium">Title</th>
-                      <th className="px-4 py-3 font-medium">Article Preview</th>
-                      <th className="px-4 py-3 font-medium">Status</th>
-                      <th className="px-4 py-3 font-medium">Date</th>
-                      <th className="px-4 py-3 font-medium">Host Site</th>
+                      <th scope="col" className="w-12 px-3 py-2 align-middle">
+                        <input
+                          ref={selectAllRef}
+                          type="checkbox"
+                          aria-label="Select all articles in this category"
+                          checked={allArticlesSelected}
+                          onChange={toggleAllArticles}
+                          disabled={deletionControlsDisabled}
+                          className="mx-auto block h-4 w-4 rounded border-gray-300 accent-blue-600"
+                        />
+                      </th>
+                      <th className="px-3 py-2 text-left font-bold">Title</th>
+                      <th className="px-3 py-2 text-left font-medium">Status</th>
+                      <th className="px-3 py-2 text-left font-medium">Date</th>
+                      <th className="px-3 py-2 text-left font-medium">Host Site</th>
+                      <th className="px-3 py-2 text-center font-medium">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -734,16 +889,36 @@ export default function ArticlesPage() {
                       <tr
                         key={article.id}
                         onClick={() => openEditor(article.id)}
-                        className="cursor-pointer align-top hover:bg-blue-50/50"
+                        className={`cursor-pointer hover:bg-blue-50/50 ${selectedArticleIds.has(article.id) ? "bg-blue-50" : ""}`}
                       >
-                        <td className="px-4 py-3">
-                          <div className="font-medium text-gray-900">{article.title}</div>
-                          <div className="mt-1 text-xs text-gray-500">{article.slug}</div>
+                        <td className="px-3 py-1.5 align-middle" onClick={(event) => event.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            aria-label={`Select ${article.title}`}
+                            checked={selectedArticleIds.has(article.id)}
+                            onChange={() => toggleArticleSelection(article.id)}
+                            disabled={deletionControlsDisabled}
+                            className="mx-auto block h-4 w-4 rounded border-gray-300 accent-blue-600"
+                          />
                         </td>
-                        <td className="px-4 py-3 text-gray-700">{getPreviewText(article)}</td>
-                        <td className="px-4 py-3 capitalize text-gray-700">{article.status}</td>
-                        <td className="px-4 py-3 text-gray-700">{formatDate(article.created_at)}</td>
-                        <td className="px-4 py-3 text-gray-700">{article.host_site}</td>
+                        <td className="px-3 py-1.5 align-middle">
+                          <div className="text-gray-900">{article.title}</div>
+                        </td>
+                        <td className="px-3 py-1.5 align-middle capitalize text-gray-700">{article.status}</td>
+                        <td className="px-3 py-1.5 align-middle text-gray-700">{formatDate(article.created_at)}</td>
+                        <td className="px-3 py-1.5 align-middle text-gray-700">{article.host_site}</td>
+                        <td className="px-3 py-1.5 text-center align-middle" onClick={(event) => event.stopPropagation()}>
+                          <Button
+                            variant="danger"
+                            type="button"
+                            aria-label={`Delete ${article.title}`}
+                            onClick={() => requestDelete([article.id])}
+                            disabled={deletionControlsDisabled}
+                            className="inline-flex items-center justify-center rounded-lg border border-red-200 !py-0.5 !text-sm !leading-5 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            Delete
+                          </Button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -751,6 +926,26 @@ export default function ArticlesPage() {
               </div>
               </>
             )}
+          </div>
+        ) : articleLoadError ? (
+          <div role="alert" className="space-y-3 rounded-xl border border-red-200 bg-red-50 p-6 text-sm text-red-700 shadow-sm">
+            <p>{articleLoadError}</p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setArticleReloadVersion((version) => version + 1)}
+                className="rounded-lg border border-red-300 bg-white px-3 py-2 font-medium hover:bg-red-100"
+              >
+                Retry
+              </button>
+              <button
+                type="button"
+                onClick={closeEditor}
+                className="rounded-lg border border-red-300 bg-white px-3 py-2 font-medium hover:bg-red-100"
+              >
+                Back To Table
+              </button>
+            </div>
           </div>
         ) : loadingArticle || selectedArticle === null ? (
           <div className="rounded-xl border border-gray-200 bg-white p-6 text-sm text-gray-500 shadow-sm">
@@ -1142,6 +1337,23 @@ export default function ArticlesPage() {
           </div>
         )}
       </ProtectedPageShell>
+
+      {deleteTarget && (
+        <ConfirmModal
+          open={true}
+          title={deleteTarget.articleIds.length === 1 ? "Delete article" : "Delete articles"}
+          message={deleteTarget.message}
+          confirmText={deleting
+            ? "Deleting..."
+            : deleteTarget.articleIds.length === 1
+              ? "Delete article"
+              : `Delete ${deleteTarget.articleIds.length} articles`}
+          loading={deleting}
+          errorMessage={deleteError}
+          onConfirm={() => void handleDeleteConfirmed()}
+          onCancel={cancelDelete}
+        />
+      )}
 
       <Toast
         message={message}

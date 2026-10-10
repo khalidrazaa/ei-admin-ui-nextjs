@@ -20,6 +20,9 @@ function loadApi(fetch, { pathname = "/leads", browser = true, abortSignal = Abo
     exports: {},
     process: { env: { NEXT_PUBLIC_API_BASE_URL: "http://localhost:8000/v1" } },
     AbortSignal: abortSignal,
+    AbortController,
+    setTimeout,
+    clearTimeout,
     fetch,
     ...(browser && {
       window: {

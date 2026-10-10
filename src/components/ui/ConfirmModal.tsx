@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import Button from "./Button";
 
 interface ConfirmModalProps {
   open: boolean;
@@ -8,6 +9,8 @@ interface ConfirmModalProps {
   message: string;
   confirmText?: string;
   cancelText?: string;
+  loading?: boolean;
+  errorMessage?: string | null;
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -18,6 +21,8 @@ export default function ConfirmModal({
   message,
   confirmText = "Delete",
   cancelText = "Cancel",
+  loading = false,
+  errorMessage = null,
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
@@ -25,7 +30,7 @@ export default function ConfirmModal({
   // ESC key support
   useEffect(() => {
     function handleEsc(e: KeyboardEvent) {
-      if (e.key === "Escape") {
+      if (e.key === "Escape" && !loading) {
         onCancel();
       }
     }
@@ -37,18 +42,18 @@ export default function ConfirmModal({
     return () => {
       window.removeEventListener("keydown", handleEsc);
     };
-  }, [open, onCancel]);
+  }, [open, onCancel, loading]);
 
   if (!open) return null;
 
   return (
     <div
-      role="dialog" aria-modal="true" aria-label={title} className="fixed inset-0 flex items-center justify-center z-50 p-4"
+      role="dialog" aria-modal="true" aria-label={title} aria-busy={loading} className="fixed inset-0 flex items-center justify-center z-50 p-4"
     >
       {/* overlay */}
       <div
         className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-        onClick={onCancel}
+        onClick={loading ? undefined : onCancel}
       />
 
       {/* modal */}
@@ -61,20 +66,31 @@ export default function ConfirmModal({
           {message}
         </p>
 
+        {errorMessage && (
+          <p role="alert" className="text-sm text-red-600 mb-4">
+            {errorMessage}
+          </p>
+        )}
+
         <div className="flex justify-end gap-2">
           <button
+            type="button"
+            disabled={loading}
             onClick={onCancel}
-            className="px-3 py-1.5 text-sm rounded border hover:bg-gray-100"
+            className="px-3 py-1.5 text-sm rounded border hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {cancelText}
           </button>
 
-          <button
+          <Button
+            variant="danger"
+            type="button"
+            disabled={loading}
             onClick={onConfirm}
-            className="px-3 py-1.5 text-sm rounded bg-red-600 text-white hover:bg-red-700"
+            className="rounded bg-red-600 !px-3 !py-1.5 !text-sm !text-white disabled:cursor-not-allowed disabled:opacity-50"
           >
             {confirmText}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

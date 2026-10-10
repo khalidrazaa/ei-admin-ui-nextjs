@@ -2,13 +2,15 @@ Admin dashboard for the ExplainIt backend.
 
 ## Environment
 
-Copy `.env.example` to `.env.local` and set the local API URL:
+Create `.env.local` and set the local API URL:
 
 ```env
-NEXT_PUBLIC_API_URL=http://localhost:8000/v1
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/v1
 ```
 
-For production, set `NEXT_PUBLIC_API_URL` in the build environment (for example, the CI/CD platform's environment-variable settings). It is intentionally public: any variable beginning with `NEXT_PUBLIC_` is embedded in the browser bundle at build time. Never put secrets in it.
+For production, set `NEXT_PUBLIC_API_BASE_URL` in the build environment (for example, the CI/CD platform's environment-variable settings). It is intentionally public: any variable beginning with `NEXT_PUBLIC_` is embedded in the browser bundle at build time. Never put secrets in it. Restart the development server after changing `.env.local`; rebuild for production changes.
+
+Ordinary API requests time out after 30 seconds and show an error when the backend cannot be reached or returns an invalid response. Synchronous generation, transcript retrieval, scans, and trend scraping keep their existing unrestricted duration through `apiFetch`'s `timeoutMs: 0` option.
 
 ## Getting Started
 
