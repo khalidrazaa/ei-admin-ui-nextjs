@@ -24,6 +24,7 @@ export async function getPopularScanRegions(): Promise<YouTubeRegion[]> {
 export async function refreshPopularScanRegions(): Promise<YouTubeRegion[]> {
   return apiFetch("/admin/yt-scan/popular/regions/refresh", {
     method: "POST",
+    timeoutMs: 0,
   }) as Promise<YouTubeRegion[]>;
 }
 
@@ -47,6 +48,7 @@ export async function scanPopularVideos(
 ): Promise<PopularScanRunResponse> {
   return apiFetch("/admin/yt-scan/popular/scan", {
     method: "POST",
+    timeoutMs: 0,
     body: settings ? JSON.stringify(settings) : undefined,
   }) as Promise<PopularScanRunResponse>;
 }
@@ -68,6 +70,7 @@ export async function getVideoTranscript(
 ): Promise<VideoTranscript> {
   return apiFetch(`/admin/videos/transcript/${videoId}`, {
     method: "GET",
+    timeoutMs: 0,
   }) as Promise<VideoTranscript>;
 }
 
@@ -76,6 +79,7 @@ export async function generateDraftArticle(
 ): Promise<Article> {
   return apiFetch(`/admin/articles/draft-article/${videoId}`, {
     method: "POST",
+    timeoutMs: 0,
   }) as Promise<Article>;
 }
 

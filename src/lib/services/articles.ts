@@ -1,6 +1,11 @@
 import { apiFetch } from "@/lib/api";
 import { Article } from "@/types/types";
 
+export type ArticleDeleteResult = {
+  deleted_ids: number[];
+  deleted_count: number;
+};
+
 export async function getArticles(status?: "draft" | "published"): Promise<Article[]> {
   const query = new URLSearchParams();
   if (status) {
@@ -26,4 +31,17 @@ export async function updateArticle(
     method: "PUT",
     body: JSON.stringify(payload),
   }) as Promise<Article>;
+}
+
+export async function deleteArticle(articleId: number): Promise<ArticleDeleteResult> {
+  return apiFetch<ArticleDeleteResult>(`/admin/articles/${articleId}`, {
+    method: "DELETE",
+  });
+}
+
+export async function deleteArticles(articleIds: number[]): Promise<ArticleDeleteResult> {
+  return apiFetch<ArticleDeleteResult>("/admin/articles/bulk-delete", {
+    method: "POST",
+    body: JSON.stringify({ article_ids: articleIds }),
+  });
 }

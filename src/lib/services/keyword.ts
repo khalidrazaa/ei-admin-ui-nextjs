@@ -9,6 +9,7 @@ interface TrendsResponse {
 export async function getKeywords(keyword: string): Promise<KeywordResponse> {
   return apiFetch<KeywordResponse>("/trends/keywords", {
     method: "POST",
+    timeoutMs: 0,
     body: JSON.stringify({ keyword }),
   });
 }
@@ -17,6 +18,7 @@ export async function getKeywords(keyword: string): Promise<KeywordResponse> {
 export async function scrapeTrends(geo: string, hours: string, sts: string): Promise<ScrapeTrendsResponse> {
   return apiFetch(`/trends/scrape?geo=${geo}&hours=${hours}&sts=${sts}`, {
     method: "POST",
+    timeoutMs: 0,
   });
 }
 
