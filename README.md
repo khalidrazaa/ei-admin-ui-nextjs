@@ -12,6 +12,25 @@ For production, set `NEXT_PUBLIC_API_BASE_URL` in the build environment (for exa
 
 Ordinary API requests time out after 30 seconds and show an error when the backend cannot be reached or returns an invalid response. Synchronous generation, transcript retrieval, scans, and trend scraping keep their existing unrestricted duration through `apiFetch`'s `timeoutMs: 0` option.
 
+## Reusable table
+
+`src/components/ui/Table.tsx` is used by Articles, Draft, and Trends. Pass `data` to infer columns from the supplied records, or provide `columns` to choose their order, headings, and cell formatting:
+
+```tsx
+import Table, { type TableColumn } from "@/components/ui/Table";
+
+type Row = { id: number; title: string; status: string };
+const columns: TableColumn<Row>[] = [
+  { id: "title", header: "Title", accessor: "title" },
+  { id: "status", header: "Status", render: (row) => row.status.toUpperCase() },
+];
+
+// Inside a component, with rows: Row[]:
+<Table data={rows} columns={columns} getRowKey={(row) => row.id} />;
+```
+
+Use `onRowClick` for row navigation and `stopRowClick: true` on checkbox or action columns. The table also supports loading and empty messages, disabled rows, keyboard navigation, alignment, and custom classes. Default row keys use `id` or `_id`; supply `getRowKey` for other identifiers.
+
 ## Getting Started
 
 First, run the development server:

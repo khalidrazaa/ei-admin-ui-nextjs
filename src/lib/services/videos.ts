@@ -1,9 +1,8 @@
 import { apiFetch } from "@/lib/api";
-import {  Article,
+import {
           PopularScanRunResponse,
           PopularScanSettings,
           PopularVideo,
-          VideoTranscript,
           YouTubeRegion,
           GetVideosByKeywordParams,
           GetVideosByNicheParams,
@@ -52,37 +51,6 @@ export async function scanPopularVideos(
     body: settings ? JSON.stringify(settings) : undefined,
   }) as Promise<PopularScanRunResponse>;
 }
-
-export async function saveVideoTranscript(
-  videoId: number,
-  transcriptText: string
-): Promise<PopularVideo> {
-  return apiFetch(`/admin/videos/transcript/${videoId}`, {
-    method: "POST",
-    body: JSON.stringify({
-      transcript_text: transcriptText,
-    }),
-  }) as Promise<PopularVideo>;
-}
-
-export async function getVideoTranscript(
-  videoId: number
-): Promise<VideoTranscript> {
-  return apiFetch(`/admin/videos/transcript/${videoId}`, {
-    method: "GET",
-    timeoutMs: 0,
-  }) as Promise<VideoTranscript>;
-}
-
-export async function generateDraftArticle(
-  videoId: number
-): Promise<Article> {
-  return apiFetch(`/admin/articles/draft-article/${videoId}`, {
-    method: "POST",
-    timeoutMs: 0,
-  }) as Promise<Article>;
-}
-
 
 export async function getVideosByKeyword(
   keyword_id: number,

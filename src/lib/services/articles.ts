@@ -25,7 +25,7 @@ export async function getArticle(articleId: number): Promise<Article> {
 
 export async function updateArticle(
   articleId: number,
-  payload: Partial<Article>
+  payload: Partial<Article> & { expected_updated_at?: string | null }
 ): Promise<Article> {
   return apiFetch(`/admin/articles/${articleId}`, {
     method: "PUT",

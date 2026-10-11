@@ -20,6 +20,7 @@ const compiledService = compile("../src/lib/services/articles.ts");
 const compiledPage = compile("../src/app/(protected)/articles/page.tsx");
 const compiledConfirmModal = compile("../src/components/ui/ConfirmModal.tsx");
 const compiledButton = compile("../src/components/ui/Button.tsx");
+const compiledTable = compile("../src/components/ui/Table.tsx");
 
 function loadButton(jsxRuntime) {
   const context = {
@@ -31,6 +32,19 @@ function loadButton(jsxRuntime) {
     },
   };
   vm.runInNewContext(compiledButton, context);
+  return context.exports;
+}
+
+function loadTable(jsxRuntime) {
+  const context = {
+    exports: {},
+    require: (name) => {
+      if (name === "react") return {};
+      assert.equal(name, "react/jsx-runtime");
+      return jsxRuntime;
+    },
+  };
+  vm.runInNewContext(compiledTable, context);
   return context.exports;
 }
 
@@ -115,6 +129,7 @@ async function createPage({ deleteResult, deleteFailures = [], deletePromise, up
   const Toast = () => {};
   const ConfirmModal = () => {};
   let Button;
+  let Table;
   const dependenciesEqual = (a, b) => a && b && a.length === b.length && a.every((value, index) => Object.is(value, b[index]));
   const hooks = {
     useState(initial) {
@@ -153,13 +168,15 @@ async function createPage({ deleteResult, deleteFailures = [], deletePromise, up
     },
   };
   const jsx = (type, props, key) => {
-    if (type === Button) return type(props);
+    if (type === Button || type === Table) return type(props);
     if (props.ref && !props.ref.current) props.ref.current = { indeterminate: false, innerHTML: "" };
     return { type, props, key };
   };
   const jsxRuntime = { jsx, jsxs: jsx, Fragment: Symbol("Fragment") };
   const buttonModule = loadButton(jsxRuntime);
   Button = buttonModule.default;
+  const tableModule = loadTable(jsxRuntime);
+  Table = tableModule.default;
   async function remove(ids) {
     if (deletePromise) return deletePromise;
     const failure = deleteFailures.shift();
@@ -167,12 +184,15 @@ async function createPage({ deleteResult, deleteFailures = [], deletePromise, up
     return deleteResult ?? { deleted_ids: ids, deleted_count: ids.length };
   }
   const modules = {
+    "@/components/content/ArticleEvidence": { __esModule: true, default: () => null },
+    "@/components/content/ArticleMarkdown": { __esModule: true, default: () => null },
     react: hooks,
     "react/jsx-runtime": jsxRuntime,
     "@/components/layout/ProtectedPageShell": { __esModule: true, default: Shell },
     "@/components/ui/Toast": { __esModule: true, default: Toast },
     "@/components/ui/ConfirmModal": { __esModule: true, default: ConfirmModal },
     "@/components/ui/Button": buttonModule,
+    "@/components/ui/Table": tableModule,
     "@/lib/services/host-sites": { getHostSites: async () => [] },
     "@/lib/services/articles": {
       getArticles: async (status) => {
@@ -245,8 +265,27 @@ async function createPage({ deleteResult, deleteFailures = [], deletePromise, up
       if (stopped) break;
     }
   }
+  function key(node, pressedKey) {
+    const match = Array.from(walk(tree)).find((entry) => entry.node === node);
+    assert.ok(match, "Keyboard control is not mounted");
+    let stopped = false;
+    let prevented = false;
+    const event = {
+      key: pressedKey,
+      target: node,
+      currentTarget: node,
+      stopPropagation: () => { stopped = true; },
+      preventDefault: () => { prevented = true; },
+    };
+    for (const entry of [node, ...match.ancestors.slice().reverse()]) {
+      event.currentTarget = entry;
+      entry.props.onKeyDown?.(event);
+      if (stopped) break;
+    }
+    return { stopped, prevented };
+  }
   const page = {
-    calls, render, settle, find, click,
+    calls, render, settle, find, click, key,
     table: () => find((node) => node.type === "table"),
     checkbox: (label) => find((node) => node.type === "input" && node.props["aria-label"] === label, page.table()),
     deleteButton: (title) => find((node) => node.type === "button" && node.props["aria-label"] === `Delete ${title}`, page.table()),
@@ -495,6 +534,10 @@ test("an open confirmation keeps the original deletion targets and blocks select
   page.checkbox("Select Gamma").props.onChange();
   page.category("Culture").props.onClick();
   page.click(page.rows()[2]);
+  assert.equal(page.rows()[2].props["aria-disabled"], true);
+  assert.equal(page.rows()[2].props.tabIndex, -1);
+  page.key(page.rows()[2], "Enter");
+  page.key(page.rows()[2], " ");
   page.deleteButton("Gamma").props.onClick({ stopPropagation() {} });
   page.render();
   assert.equal(page.checkbox("Select Alpha").props.checked, true);
@@ -581,6 +624,24 @@ test("checkbox and delete clicks do not open the row editor; title row clicks st
   page.click(page.rows()[0]);
   await page.settle();
   assert.deepEqual(page.calls.edited, [1]);
+});
+
+test("Articles rows open their editor with Enter and Space while keyboard controls remain isolated", async () => {
+  const page = await createPage();
+  assert.equal(page.key(page.checkbox("Select Alpha"), " ").stopped, true);
+  assert.equal(page.key(page.deleteButton("Beta"), "Enter").stopped, true);
+  assert.deepEqual(page.calls.edited, []);
+  assert.equal(page.rows()[1].props.tabIndex, 0);
+  assert.equal(page.key(page.rows()[1], "Enter").prevented, true);
+  await page.settle();
+  assert.deepEqual(page.calls.edited, [2]);
+  page.find((node) => node.type === "input" && node.props.value === "Beta");
+  page.click(page.find((node) => node.type === "button" && textContent(node) === "Back To Table"));
+  await page.settle();
+  assert.equal(page.key(page.rows()[0], " ").prevented, true);
+  await page.settle();
+  assert.deepEqual(page.calls.edited, [2, 1]);
+  page.find((node) => node.type === "input" && node.props.value === "Alpha");
 });
 
 test("delete completion preserves another article updated while deletion was pending", async () => {

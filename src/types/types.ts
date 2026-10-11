@@ -46,30 +46,6 @@ export interface ScrapeTrendsResponse {
   };
 }
 
-export interface VideoTranscript {
-  id: number;
-  title: string;
-  youtube_video_id: string;
-  transcript_text: string;
-  transcript_language: string | null;
-  transcript_source: string | null;
-  transcript_fetched_at: string | null;
-}
-
-export type DraftProvider = "gemini" | "chatgpt";
-
-export interface DraftArticleRequest {
-  provider: DraftProvider;
-  prompt?: string;
-  additional_context?: string;
-}
-
-export interface ManualTranscriptRequest {
-  title: string;
-  category_title: string;
-  transcript_text: string;
-}
-
 export interface DraftPrompt {
   id: number;
   name: string;

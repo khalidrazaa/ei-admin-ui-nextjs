@@ -1,7 +1,5 @@
 "use client";
 
-import { useState } from "react";
-import VideoTranscriptAction from "./VideoTranscriptAction";
 import type { ReactNode } from "react";
 
 import { PopularVideo, TrendVideo, VideoTrendStage } from "@/types/types";
@@ -63,9 +61,7 @@ function MetricChip({
   );
 }
 
-export default function VideoCard({ video: initialVideo, onVideoUpdated, sidebarActions, sidebarMessage }: Props) {
-  const [savedVideo, setSavedVideo] = useState<{ original: typeof initialVideo; updated: PopularVideo } | null>(null);
-  const video = savedVideo?.original === initialVideo ? savedVideo.updated : initialVideo;
+export default function VideoCard({ video, sidebarActions, sidebarMessage }: Props) {
   const trendStage = video.trend_stage ?? "watchlist";
   const stageTone = stageStyles[trendStage as VideoTrendStage] ?? stageStyles.watchlist;
 
@@ -86,10 +82,6 @@ export default function VideoCard({ video: initialVideo, onVideoUpdated, sidebar
             />
           </a>
 
-          <VideoTranscriptAction video={video} onVideoUpdated={(updated) => {
-            setSavedVideo({ original: initialVideo, updated });
-            onVideoUpdated?.(updated);
-          }} />
           {sidebarActions && <div className="flex flex-col gap-2">{sidebarActions}</div>}
           {sidebarMessage}
         </div>
@@ -157,11 +149,6 @@ export default function VideoCard({ video: initialVideo, onVideoUpdated, sidebar
               <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${stageTone}`}>
                 {stageLabel(video.trend_stage)}
               </span>
-              {video.has_transcript && (
-                <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700">
-                  Transcript Ready
-                </span>
-              )}
             </div>
           </div>
 
@@ -206,11 +193,7 @@ export default function VideoCard({ video: initialVideo, onVideoUpdated, sidebar
             </div>
           </div>
 
-          {video.transcript_language && (
-            <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-gray-500">
-              <span>Transcript {video.transcript_language}</span>
-            </div>
-          )}
+
 
         </div>
       </div>

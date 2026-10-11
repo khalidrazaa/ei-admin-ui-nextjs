@@ -2,9 +2,13 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import ArticleEvidence from "@/components/content/ArticleEvidence";
+import ArticleMarkdown from "@/components/content/ArticleMarkdown";
+
 import ProtectedPageShell from "@/components/layout/ProtectedPageShell";
 import Button from "@/components/ui/Button";
 import ConfirmModal from "@/components/ui/ConfirmModal";
+import Table, { type TableColumn } from "@/components/ui/Table";
 import Toast from "@/components/ui/Toast";
 import {
   deleteArticle,
@@ -342,6 +346,8 @@ function toUpdatePayload(form: ArticleEditorForm, contentHtml: string): Partial<
 }
 
 export default function ArticlesPage() {
+  const [sourceMode, setSourceMode] = useState(false);
+  const [markdownSource, setMarkdownSource] = useState("");
   const [articles, setArticles] = useState<Article[]>([]);
   const [loadingList, setLoadingList] = useState(true);
   const [listReloadVersion, setListReloadVersion] = useState(0);
@@ -487,6 +493,8 @@ export default function ArticlesPage() {
         const article = await getArticle(articleId);
         if (cancelled) return;
         setSelectedArticle(article);
+        setMarkdownSource(article.content ?? "");
+        setSourceMode(/```|^\|/m.test(article.content ?? ""));
         setEditorForm(toEditorForm(article));
       } catch (err) {
         if (cancelled) return;
@@ -697,7 +705,7 @@ export default function ArticlesPage() {
 
       const updated = await updateArticle(
         selectedArticleId,
-        toUpdatePayload(editorForm, contentHtmlRef.current)
+        { ...toUpdatePayload(editorForm, contentHtmlRef.current), ...(sourceMode ? { content: markdownSource } : {}), expected_updated_at: selectedArticle?.updated_at ?? null }
       );
 
       setSelectedArticle(updated);
@@ -726,6 +734,79 @@ export default function ArticlesPage() {
       setSaving(false);
     }
   }
+
+  const articleColumns: TableColumn<Article>[] = [
+    {
+      id: "selection",
+      header: (
+        <input
+          ref={selectAllRef}
+          type="checkbox"
+          aria-label="Select all articles in this category"
+          checked={allArticlesSelected}
+          onChange={toggleAllArticles}
+          disabled={deletionControlsDisabled}
+          className="mx-auto block h-4 w-4 rounded border-gray-300 accent-blue-600"
+        />
+      ),
+      align: "center",
+      headerClassName: "w-12",
+      stopRowClick: true,
+      render: (article) => (
+        <input
+          type="checkbox"
+          aria-label={`Select ${article.title}`}
+          checked={selectedArticleIds.has(article.id)}
+          onChange={() => toggleArticleSelection(article.id)}
+          disabled={deletionControlsDisabled}
+          className="mx-auto block h-4 w-4 rounded border-gray-300 accent-blue-600"
+        />
+      ),
+    },
+    {
+      id: "title",
+      header: "Title",
+      accessor: "title",
+      headerClassName: "!font-bold",
+      className: "text-gray-900",
+    },
+    {
+      id: "status",
+      header: "Status",
+      accessor: "status",
+      className: "capitalize text-gray-700",
+    },
+    {
+      id: "created_at",
+      header: "Date",
+      render: (article) => formatDate(article.created_at),
+      className: "text-gray-700",
+    },
+    {
+      id: "host_site",
+      header: "Host Site",
+      accessor: "host_site",
+      className: "text-gray-700",
+    },
+    {
+      id: "actions",
+      header: "Actions",
+      align: "center",
+      stopRowClick: true,
+      render: (article) => (
+        <Button
+          variant="danger"
+          type="button"
+          aria-label={`Delete ${article.title}`}
+          onClick={() => requestDelete([article.id])}
+          disabled={deletionControlsDisabled}
+          className="inline-flex items-center justify-center rounded-lg border border-red-200 !py-0.5 !text-sm !leading-5 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          Delete
+        </Button>
+      ),
+    },
+  ];
 
   return (
     <>
@@ -862,68 +943,16 @@ export default function ArticlesPage() {
                   </div>
                 ))}
               </div>
-              <div className="hidden overflow-x-auto lg:block">
-                <table className="min-w-full divide-y divide-gray-200 text-left text-sm">
-                  <thead className="bg-gray-50">
-                    <tr className="text-left text-gray-600">
-                      <th scope="col" className="w-12 px-3 py-2 align-middle">
-                        <input
-                          ref={selectAllRef}
-                          type="checkbox"
-                          aria-label="Select all articles in this category"
-                          checked={allArticlesSelected}
-                          onChange={toggleAllArticles}
-                          disabled={deletionControlsDisabled}
-                          className="mx-auto block h-4 w-4 rounded border-gray-300 accent-blue-600"
-                        />
-                      </th>
-                      <th className="px-3 py-2 text-left font-bold">Title</th>
-                      <th className="px-3 py-2 text-left font-medium">Status</th>
-                      <th className="px-3 py-2 text-left font-medium">Date</th>
-                      <th className="px-3 py-2 text-left font-medium">Host Site</th>
-                      <th className="px-3 py-2 text-center font-medium">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {filteredArticles.map((article) => (
-                      <tr
-                        key={article.id}
-                        onClick={() => openEditor(article.id)}
-                        className={`cursor-pointer hover:bg-blue-50/50 ${selectedArticleIds.has(article.id) ? "bg-blue-50" : ""}`}
-                      >
-                        <td className="px-3 py-1.5 align-middle" onClick={(event) => event.stopPropagation()}>
-                          <input
-                            type="checkbox"
-                            aria-label={`Select ${article.title}`}
-                            checked={selectedArticleIds.has(article.id)}
-                            onChange={() => toggleArticleSelection(article.id)}
-                            disabled={deletionControlsDisabled}
-                            className="mx-auto block h-4 w-4 rounded border-gray-300 accent-blue-600"
-                          />
-                        </td>
-                        <td className="px-3 py-1.5 align-middle">
-                          <div className="text-gray-900">{article.title}</div>
-                        </td>
-                        <td className="px-3 py-1.5 align-middle capitalize text-gray-700">{article.status}</td>
-                        <td className="px-3 py-1.5 align-middle text-gray-700">{formatDate(article.created_at)}</td>
-                        <td className="px-3 py-1.5 align-middle text-gray-700">{article.host_site}</td>
-                        <td className="px-3 py-1.5 text-center align-middle" onClick={(event) => event.stopPropagation()}>
-                          <Button
-                            variant="danger"
-                            type="button"
-                            aria-label={`Delete ${article.title}`}
-                            onClick={() => requestDelete([article.id])}
-                            disabled={deletionControlsDisabled}
-                            className="inline-flex items-center justify-center rounded-lg border border-red-200 !py-0.5 !text-sm !leading-5 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            Delete
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <Table
+                data={filteredArticles}
+                columns={articleColumns}
+                getRowKey={(article) => article.id}
+                ariaLabel="Published articles"
+                onRowClick={(article) => openEditor(article.id)}
+                isRowDisabled={() => deletionControlsDisabled}
+                rowClassName={(article) => `hover:bg-blue-50/50 ${selectedArticleIds.has(article.id) ? "bg-blue-50" : ""}`}
+                className="hidden lg:block"
+              />
               </>
             )}
           </div>
@@ -1003,6 +1032,7 @@ export default function ArticlesPage() {
               </div>
             </div>
 
+            <ArticleEvidence articleId={selectedArticle.id} content={selectedArticle.content ?? ""} />
             {editorStep === 1 ? (
               <div className="space-y-4 rounded-xl border border-gray-200 bg-white p-4 lg:p-6 shadow-sm">
                 <label className="block space-y-1">
@@ -1022,7 +1052,13 @@ export default function ArticlesPage() {
                   </span>
 
                   <div className="overflow-hidden rounded-lg border border-gray-300">
-                    <div
+                    <label className="flex gap-2 p-3"><input type="checkbox" checked={sourceMode} onChange={(e) => {
+                      if (e.target.checked) setMarkdownSource(editorHtmlToMarkdown(contentHtmlRef.current));
+                      else { contentHtmlRef.current = markdownToEditorHtml(markdownSource); if(contentEditorRef.current) contentEditorRef.current.innerHTML = contentHtmlRef.current; }
+                      setSourceMode(e.target.checked);
+                    }} />Edit Markdown (preserves diagrams and tables)</label>
+                    {sourceMode && <div className="p-3"><textarea aria-label="Article Markdown" className="min-h-[420px] w-full rounded border p-3 font-mono text-sm" value={markdownSource} onChange={e=>setMarkdownSource(e.target.value)} /><details><summary>Reader preview</summary><ArticleMarkdown content={markdownSource} /></details></div>}
+                    <div style={{display: sourceMode ? "none" : undefined}}
                       onMouseDown={(event) => event.preventDefault()}
                       className="flex flex-wrap gap-2 border-b border-gray-200 bg-gray-50 p-2">
                       <button
@@ -1092,6 +1128,7 @@ export default function ArticlesPage() {
 
                     <div
                       ref={contentEditorRef}
+                      style={{display: sourceMode ? "none" : undefined}}
                       contentEditable
                       suppressContentEditableWarning
                       role="textbox"
