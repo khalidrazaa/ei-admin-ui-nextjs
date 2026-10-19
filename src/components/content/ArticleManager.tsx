@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ChangeEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 import ArticleEvidence from "@/components/content/ArticleEvidence";
 import ArticleMarkdown from "@/components/content/ArticleMarkdown";
@@ -19,6 +19,8 @@ import {
   updateArticle,
 } from "@/lib/services/articles";
 import { getHostSites } from "@/lib/services/host-sites";
+import { formatCsvList, parseCsvList } from "@/lib/utils/csvList";
+import { parseMarkdownDraft, validateMarkdownFile } from "@/lib/utils/markdownDraft";
 import { Article } from "@/types/types";
 
 const DEFAULT_HOST_SITE = "explainit.tech";
@@ -37,6 +39,7 @@ type ArticleEditorForm = {
   host_site: string;
   language: string;
   excerpt: string;
+  reading_time: string;
   meta_description: string;
   canonical_url: string;
   schema_type: string;
@@ -60,6 +63,7 @@ const EMPTY_FORM: ArticleEditorForm = {
   host_site: DEFAULT_HOST_SITE,
   language: "en",
   excerpt: "",
+  reading_time: "",
   meta_description: "",
   canonical_url: "",
   schema_type: "Article",
@@ -74,13 +78,6 @@ const EMPTY_FORM: ArticleEditorForm = {
 function optionalOrNull(value: string): string | null {
   const normalized = value.trim();
   return normalized || null;
-}
-
-function parseCsv(value: string): string[] {
-  return value
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
 }
 
 function slugFromTitle(title: string): string {
@@ -99,10 +96,6 @@ function formatDate(value: string | null): string {
   }
 
   return date.toLocaleDateString();
-}
-
-function isLikelyHtml(value: string): boolean {
-  return /<\/?[a-z][\s\S]*>/i.test(value);
 }
 
 function escapeHtml(value: string): string {
@@ -130,10 +123,6 @@ function markdownToEditorHtml(value: string): string {
   const source = value.replace(/\r\n?/g, "\n").trim();
   if (!source) {
     return "<p></p>";
-  }
-
-  if (isLikelyHtml(source)) {
-    return source;
   }
 
   const lines = source.split("\n");
@@ -298,19 +287,20 @@ function getPreviewText(article: Article): string {
   return normalized.length > 140 ? `${normalized.slice(0, 137)}...` : normalized;
 }
 
-function toEditorForm(article: Article): ArticleEditorForm {
+function toEditorForm(article: Pick<Article, "title" | "slug"> & Partial<Article>): ArticleEditorForm {
   return {
     title: article.title,
     seo_title: article.seo_title ?? "",
     slug: article.slug,
-    status: article.status,
+    status: article.status ?? "draft",
     category: article.category ?? "",
     subcategory: article.subcategory ?? "",
-    tags_csv: article.tags.join(", "),
-    keywords_csv: article.keywords.join(", "),
+    tags_csv: formatCsvList(article.tags ?? []),
+    keywords_csv: formatCsvList(article.keywords ?? []),
     host_site: article.host_site || DEFAULT_HOST_SITE,
     language: article.language ?? "en",
     excerpt: article.excerpt ?? "",
+    reading_time: article.reading_time == null ? "" : String(article.reading_time),
     meta_description: article.meta_description ?? "",
     canonical_url: article.canonical_url ?? "",
     schema_type: article.schema_type ?? "Article",
@@ -319,7 +309,7 @@ function toEditorForm(article: Article): ArticleEditorForm {
     open_graph_image: article.open_graph_image ?? "",
     featured_image_url: article.featured_image_url ?? "",
     image_alt_text: article.image_alt_text ?? "",
-    is_featured: article.is_featured,
+    is_featured: article.is_featured ?? false,
   };
 }
 
@@ -333,12 +323,13 @@ function toUpdatePayload(form: ArticleEditorForm, contentHtml: string): Partial<
     status: form.status,
     category: optionalOrNull(form.category),
     subcategory: optionalOrNull(form.subcategory),
-    tags: parseCsv(form.tags_csv),
-    keywords: parseCsv(form.keywords_csv),
+    tags: parseCsvList(form.tags_csv),
+    keywords: parseCsvList(form.keywords_csv),
     host_site: form.host_site.trim() || DEFAULT_HOST_SITE,
     language: form.language.trim() || "en",
     content: markdownContent || null,
     excerpt: optionalOrNull(form.excerpt),
+    ...(form.reading_time.trim() ? { reading_time: Number(form.reading_time) } : {}),
     meta_description: optionalOrNull(form.meta_description),
     canonical_url: optionalOrNull(form.canonical_url),
     schema_type: optionalOrNull(form.schema_type),
@@ -375,6 +366,9 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [selectedArticleId, setSelectedArticleId] = useState<number | null>(null);
   const [newDraft, setNewDraft] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importFeedback, setImportFeedback] = useState<{ filename: string; warnings: string[] } | null>(null);
   const [editorStep, setEditorStep] = useState<EditorStep>(1);
   const [loadingArticle, setLoadingArticle] = useState(false);
   const [articleLoadError, setArticleLoadError] = useState<string | null>(null);
@@ -396,7 +390,10 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
   const savingRef = useRef(false);
   const createdArticleIdRef = useRef<number | null>(null);
   const slugEditedRef = useRef(false);
-  const deletionControlsDisabled = deleting || deleteTarget !== null;
+  const markdownFileInputRef = useRef<HTMLInputElement | null>(null);
+  const importingRef = useRef(false);
+  const deletionControlsDisabled = deleting || deleteTarget !== null || importing;
+  const editorControlsDisabled = saving || importing;
 
   const categoryStats = useMemo(() => {
     const counts = new Map<string, number>();
@@ -519,7 +516,8 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
         if (cancelled) return;
         setSelectedArticle(article);
         setMarkdownSource(article.content ?? "");
-        setSourceMode(/```|^\|/m.test(article.content ?? ""));
+        // Stored Markdown may include syntax the rich text editor cannot round-trip.
+        setSourceMode(true);
         setEditorForm(toEditorForm(article));
       } catch (err) {
         if (cancelled) return;
@@ -565,7 +563,7 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
   }, [message, messageType]);
 
   function updateFormField<K extends keyof ArticleEditorForm>(field: K, value: ArticleEditorForm[K]) {
-    if (savingRef.current) return;
+    if (savingRef.current || importingRef.current) return;
     if (newDraft && field === "slug") slugEditedRef.current = true;
     setEditorForm((current) => ({
       ...current,
@@ -617,14 +615,16 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
   }
 
   function openEditor(articleId: number) {
-    if (savingRef.current || deletionInProgressRef.current || deleteTarget) return;
+    if (savingRef.current || importingRef.current || deletionInProgressRef.current || deleteTarget) return;
+    setImportError(null);
+    setImportFeedback(null);
     setNewDraft(false);
     setSelectedArticleId(articleId);
     setEditorStep(1);
   }
 
   function startNewDraft() {
-    if (!isDraft || savingRef.current || deletionInProgressRef.current || deleteTarget) return;
+    if (!isDraft || savingRef.current || importingRef.current || deletionInProgressRef.current || deleteTarget) return;
     setSelectedArticleId(null);
     setSelectedArticle(null);
     setNewDraft(true);
@@ -636,26 +636,68 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
     setMarkdownSource("");
     setMessage(null);
     setMessageType(null);
+    setImportError(null);
+    setImportFeedback(null);
     slugEditedRef.current = false;
     contentHtmlRef.current = "";
     if (contentEditorRef.current) contentEditorRef.current.innerHTML = "";
   }
 
   function closeEditor() {
-    if (newDraft && savingRef.current) return;
+    if (importingRef.current || (newDraft && savingRef.current)) return;
+    setImportError(null);
+    setImportFeedback(null);
     setNewDraft(false);
     setSelectedArticleId(null);
     setEditorStep(1);
   }
 
+  async function handleMarkdownUpload(event: ChangeEvent<HTMLInputElement>) {
+    const input = event.currentTarget;
+    const file = input.files?.[0];
+    input.value = "";
+    if (!file || !isDraft || selectedArticleId !== null || savingRef.current || importingRef.current || deletionInProgressRef.current || deleteTarget) return;
+    importingRef.current = true;
+    setImporting(true);
+    setImportError(null);
+    try {
+      validateMarkdownFile(file);
+      const bytes = await file.arrayBuffer();
+      let source: string;
+      try {
+        source = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+      } catch {
+        throw new Error("The Markdown file must use UTF-8 encoding. Save it as UTF-8 and try again.");
+      }
+      const { payload, warnings } = parseMarkdownDraft(source, file.name);
+      setNewDraft(true);
+      setEditorForm(toEditorForm(payload));
+      setEditorStep(1);
+      setArticleLoadError(null);
+      setSourceMode(true);
+      setMarkdownSource(payload.content);
+      setMessage(null);
+      setMessageType(null);
+      slugEditedRef.current = true;
+      contentHtmlRef.current = "";
+      if (contentEditorRef.current) contentEditorRef.current.innerHTML = "";
+      setImportFeedback({ filename: file.name, warnings });
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : "Unable to read this Markdown file. Try again.");
+    } finally {
+      importingRef.current = false;
+      setImporting(false);
+    }
+  }
+
   function selectCategory(category: string) {
-    if (deletionInProgressRef.current || deleteTarget) return;
+    if (importingRef.current || deletionInProgressRef.current || deleteTarget) return;
     setSelectedCategory(category);
     setSelectedArticleIds(new Set());
   }
 
   function toggleArticleSelection(articleId: number) {
-    if (deletionInProgressRef.current || deleteTarget) return;
+    if (importingRef.current || deletionInProgressRef.current || deleteTarget) return;
     setSelectedArticleIds((current) => {
       const next = new Set(current);
       if (next.has(articleId)) next.delete(articleId);
@@ -665,14 +707,14 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
   }
 
   function toggleAllArticles() {
-    if (deletionInProgressRef.current || deleteTarget) return;
+    if (importingRef.current || deletionInProgressRef.current || deleteTarget) return;
     setSelectedArticleIds(
       allArticlesSelected ? new Set() : new Set(filteredArticles.map((article) => article.id))
     );
   }
 
   function requestDelete(articleIds: number[]) {
-    if (deletionInProgressRef.current || deleteTarget || articleIds.length === 0) return;
+    if (importingRef.current || deletionInProgressRef.current || deleteTarget || articleIds.length === 0) return;
 
     const article = articles.find((item) => item.id === articleIds[0]);
     const target = articleIds.length === 1
@@ -723,7 +765,7 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
   }
 
   async function handleSave() {
-    if (savingRef.current || (selectedArticleId === null && !newDraft)) {
+    if (savingRef.current || importingRef.current || (selectedArticleId === null && !newDraft)) {
       return;
     }
 
@@ -745,6 +787,12 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
       return;
     }
 
+    if (editorForm.reading_time.trim() && (!Number.isSafeInteger(Number(editorForm.reading_time)) || Number(editorForm.reading_time) < 0)) {
+      setMessage("Reading time must be a whole number of minutes, 0 or greater.");
+      setMessageType("error");
+      return;
+    }
+
     syncContentFromEditor();
 
     savingRef.current = true;
@@ -753,7 +801,7 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
       setMessage(newDraft ? "Saving draft..." : "Saving article updates...");
       setMessageType("info");
 
-      const payload = { ...toUpdatePayload(editorForm, contentHtmlRef.current), ...(sourceMode ? { content: markdownSource } : {}) };
+      const payload = { ...toUpdatePayload(editorForm, sourceMode ? "" : contentHtmlRef.current), ...(sourceMode ? { content: markdownSource } : {}) };
       const updated = newDraft
         ? await createDraft({ ...payload, title: editorForm.title.trim(), slug: editorForm.slug.trim(), content: payload.content ?? "", status: "draft" })
         : await updateArticle(selectedArticleId!, { ...payload, expected_updated_at: selectedArticle?.updated_at ?? null });
@@ -871,8 +919,24 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
     },
   ];
 
+  const markdownUploadControls = <div className="flex flex-wrap items-center gap-3">
+    <Button type="button" onClick={() => markdownFileInputRef.current?.click()} disabled={editorControlsDisabled || deletionControlsDisabled}>
+      {importing ? "Reading Markdown..." : "Upload Markdown"}
+    </Button>
+    <a href="/examples/draft-template.md" download className="text-sm text-blue-700 underline">Download template</a>
+  </div>;
+
   return (
     <>
+      {isDraft && <input
+        ref={markdownFileInputRef}
+        type="file"
+        accept=".md,.markdown,text/markdown,text/x-markdown"
+        aria-label="Upload Markdown draft"
+        hidden
+        disabled={editorControlsDisabled || deletionControlsDisabled}
+        onChange={(event) => void handleMarkdownUpload(event)}
+      />}
       <ProtectedPageShell
         title={isDraft ? "Drafts" : "Articles"}
         description={isDraft ? "Review drafted articles before publishing" : undefined}
@@ -923,6 +987,8 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
         }
         contentClassName="flex-1 overflow-y-auto p-4 lg:p-6"
       >
+        {importError && <div role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{importError}</div>}
+        {importing && <p role="status" className="mb-4 text-sm text-gray-500">Reading Markdown file...</p>}
         {loadingList ? (
           <div className="rounded-xl border border-gray-200 bg-white p-6 text-sm text-gray-500 shadow-sm">
             {isDraft ? "Loading drafted articles..." : "Loading articles..."}
@@ -948,8 +1014,9 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
                   {filteredArticles.length === 1 ? "" : "s"}
                 </p>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 {isDraft && <Button type="button" onClick={startNewDraft} disabled={deletionControlsDisabled}>New draft</Button>}
+                {isDraft && markdownUploadControls}
                 {isDraft && <Button
                   type="button"
                   onClick={() => {
@@ -987,7 +1054,7 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
             {filteredArticles.length === 0 ? (
               <div className="p-8 text-sm text-gray-500">{isDraft
                 ? search ? "No matching drafted articles." : articles.length === 0
-                  ? "No saved drafts yet. Choose New draft to write an article, or generate one from Topics."
+                  ? "No saved drafts yet. Choose New draft, upload Markdown, or generate an article from Topics."
                   : "No drafted articles for this category."
                 : "No published articles for this category."}</div>
             ) : (
@@ -1086,7 +1153,7 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
                   <button
                     type="button"
                     onClick={closeEditor}
-                    disabled={saving && newDraft}
+                    disabled={importing || (saving && newDraft)}
                     className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
                   >
                     Back To Table
@@ -1094,8 +1161,8 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
                   {editorStep === 2 ? (
                     <button
                       type="button"
-                      onClick={() => setEditorStep(1)}
-                      disabled={saving}
+                      onClick={() => { if (!savingRef.current && !importingRef.current) setEditorStep(1); }}
+                      disabled={editorControlsDisabled}
                       className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
                     >
                       Previous Step
@@ -1104,8 +1171,9 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
                   {editorStep === 1 ? (
                     <button
                       type="button"
-                      disabled={saving}
+                      disabled={editorControlsDisabled}
                       onClick={() => {
+                        if (savingRef.current || importingRef.current) return;
                         syncContentFromEditor();
                         setEditorStep(2);
                       }}
@@ -1117,7 +1185,7 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
                   <button
                     type="button"
                     onClick={handleSave}
-                    disabled={saving}
+                    disabled={editorControlsDisabled}
                     className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {saving ? "Saving..." : newDraft ? "Save Draft" : editorForm.status === "published" ? "Publish Changes" : "Save Changes"}
@@ -1127,8 +1195,15 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
             </div>
 
             {selectedArticle && <ArticleEvidence articleId={selectedArticle.id} content={selectedArticle.content ?? ""} />}
-            {newDraft && <p className="text-sm text-gray-500">Write your article and review its metadata. Save Draft keeps it unpublished.</p>}
-            <fieldset disabled={saving} className="min-w-0">
+            {newDraft && <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-4">
+              {markdownUploadControls}
+              <p className="text-sm text-gray-500">Write your article or upload a UTF-8 .md or .markdown file (up to 2 MiB). YAML front matter fills the metadata. Review both steps, then choose Save Draft.</p>
+              {importFeedback && <div role="status" className="space-y-2 text-sm text-gray-700">
+                <p>Loaded {importFeedback.filename}. Review the article and metadata, then save your draft.</p>
+                {importFeedback.warnings.length > 0 && <ul className="list-disc space-y-1 pl-5 text-amber-800">{importFeedback.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>}
+              </div>}
+            </div>}
+            <fieldset disabled={editorControlsDisabled} className="min-w-0">
             {editorStep === 1 ? (
               <div className="space-y-4 rounded-xl border border-gray-200 bg-white p-4 lg:p-6 shadow-sm">
                 <label className="block space-y-1">
@@ -1225,7 +1300,7 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
                     <div
                       ref={contentEditorRef}
                       style={{display: sourceMode ? "none" : undefined}}
-                      contentEditable={!saving}
+                      contentEditable={!editorControlsDisabled}
                       suppressContentEditableWarning
                       role="textbox"
                       aria-multiline="true"
@@ -1343,8 +1418,9 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
                     <span className="text-xs font-medium uppercase tracking-wide text-gray-500">
                       Tags (comma separated)
                     </span>
-                    <input
+                    <textarea
                       value={editorForm.tags_csv}
+                      rows={2}
                       onChange={(event) => updateFormField("tags_csv", event.target.value)}
                       className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500"
                     />
@@ -1354,8 +1430,9 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
                     <span className="text-xs font-medium uppercase tracking-wide text-gray-500">
                       Keywords (comma separated)
                     </span>
-                    <input
+                    <textarea
                       value={editorForm.keywords_csv}
+                      rows={2}
                       onChange={(event) => updateFormField("keywords_csv", event.target.value)}
                       className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500"
                     />
@@ -1454,6 +1531,19 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
                       onChange={(event) => updateFormField("image_alt_text", event.target.value)}
                       className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500"
                     />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Reading Time (minutes)</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      placeholder="Estimate automatically"
+                      value={editorForm.reading_time}
+                      onChange={(event) => updateFormField("reading_time", event.target.value)}
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500"
+                    />
+                    <span className="block text-xs text-gray-500">Leave blank to estimate from the article when saved.</span>
                   </label>
                 </div>
 

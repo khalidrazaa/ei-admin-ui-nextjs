@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
 import ts from "typescript";
+import * as yaml from "js-yaml";
 
 function compile(relativePath) {
   return ts.transpileModule(
@@ -22,6 +23,20 @@ const compiledManager = compile("../src/components/content/ArticleManager.tsx");
 const compiledConfirmModal = compile("../src/components/ui/ConfirmModal.tsx");
 const compiledButton = compile("../src/components/ui/Button.tsx");
 const compiledTable = compile("../src/components/ui/Table.tsx");
+const compiledMarkdownDraft = compile("../src/lib/utils/markdownDraft.ts");
+const compiledCsvList = compile("../src/lib/utils/csvList.ts");
+
+function loadUtility(source, modules = {}) {
+  const context = { exports: {}, Error, require: (name) => {
+    assert.ok(name in modules, `Unexpected utility dependency: ${name}`);
+    return modules[name];
+  } };
+  vm.runInNewContext(source, context);
+  return context.exports;
+}
+
+const csvList = loadUtility(compiledCsvList);
+const markdownDraft = loadUtility(compiledMarkdownDraft, { "js-yaml": yaml, "./csvList": csvList });
 
 function loadButton(jsxRuntime) {
   const context = {
@@ -155,7 +170,7 @@ function* walk(node, ancestors = []) {
 // mocked at module boundaries; assertions use rendered controls and events.
 async function createPage({ deleteResult, deleteFailures = [], deletePromise, updatePromise, createFailures = [], createPromise, editorDocument, listFailures = [], articleFailures = [], search = "", status = "published", sidebarExtra, onRefresh, initialArticles = articles, unfilteredList = false } = {}) {
   const slots = [];
-  const calls = { single: [], bulk: [], edited: [], updated: [], created: [], listed: 0, listStatuses: [] };
+  const calls = { single: [], bulk: [], edited: [], updated: [], created: [], listed: 0, listStatuses: [], filePickers: 0 };
   const storedArticles = initialArticles.map((article) => ({ ...article }));
   let cursor = 0;
   let dirty = true;
@@ -205,7 +220,10 @@ async function createPage({ deleteResult, deleteFailures = [], deletePromise, up
   };
   const jsx = (type, props, key) => {
     if (type === Button || type === Table) return type(props);
-    if (props.ref && !props.ref.current) props.ref.current = { indeterminate: false, innerHTML: "" };
+    if (props.ref && !props.ref.current) props.ref.current = {
+      indeterminate: false, innerHTML: "",
+      click: () => { calls.filePickers += 1; },
+    };
     return { type, props, key };
   };
   const jsxRuntime = { jsx, jsxs: jsx, Fragment: Symbol("Fragment") };
@@ -230,6 +248,8 @@ async function createPage({ deleteResult, deleteFailures = [], deletePromise, up
     "@/components/ui/Button": buttonModule,
     "@/components/ui/Table": tableModule,
     "@/lib/services/host-sites": { getHostSites: async () => [] },
+    "@/lib/utils/markdownDraft": markdownDraft,
+    "@/lib/utils/csvList": csvList,
     "@/lib/services/articles": {
       getArticles: async (status) => {
         calls.listed += 1;
@@ -275,7 +295,7 @@ async function createPage({ deleteResult, deleteFailures = [], deletePromise, up
     set: () => { assert.fail("Opening or closing an article must stay inside its current page"); },
   });
   const context = {
-    exports: {}, Error, URLSearchParams,
+    exports: {}, Error, URLSearchParams, TextDecoder,
     document: editorDocument,
     Node: { TEXT_NODE: 3, ELEMENT_NODE: 1 },
     console: { error: () => {} },
@@ -385,6 +405,21 @@ async function createPage({ deleteResult, deleteFailures = [], deletePromise, up
   };
   await settle();
   return page;
+}
+
+function markdownFile(source, name = "imported-draft.md", overrides = {}) {
+  const bytes = Buffer.from(source, "utf8");
+  return {
+    name, size: bytes.byteLength,
+    arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+    ...overrides,
+  };
+}
+
+function chooseMarkdownFile(page, file, onChange) {
+  const input = { files: file ? [file] : [], value: file?.name ?? "" };
+  (onChange ?? page.find((node) => node.props["aria-label"] === "Upload Markdown draft").props.onChange)({ currentTarget: input });
+  return input;
 }
 
 test("Articles table requests published articles and excludes drafts from rows, selection, and category counts", async () => {
@@ -749,6 +784,234 @@ test("pending manual draft creation blocks navigation, edits, and duplicate save
   page.click(page.button("Back To Table"));
   await page.settle();
   assert.equal(page.rows().length, 2);
+});
+
+test("Markdown upload is available in the Drafts list and new editor, and opens the file picker", async () => {
+  const published = await createPage();
+  assert.equal(published.has((node) => node.type === "button" && textContent(node) === "Upload Markdown"), false);
+  assert.equal(published.has((node) => node.props["aria-label"] === "Upload Markdown draft"), false);
+  const page = await createPage({ status: "draft" });
+  const input = page.find((node) => node.props["aria-label"] === "Upload Markdown draft");
+  assert.equal(input.props.type, "file");
+  assert.equal(input.props.hidden, true);
+  assert.match(input.props.accept, /\.md,\.markdown/);
+  page.find((node) => node.type === "a" && node.props.href === "/examples/draft-template.md" && node.props.download);
+  page.click(page.button("Upload Markdown"));
+  assert.equal(page.calls.filePickers, 1);
+  page.click(page.button(/^New draft$/i));
+  await page.settle();
+  page.click(page.button("Upload Markdown"));
+  assert.equal(page.calls.filePickers, 2);
+  page.click(page.button("Back To Table"));
+  await page.settle();
+  page.click(page.rows()[0]);
+  await page.settle();
+  assert.equal(page.has((node) => node.type === "button" && textContent(node) === "Upload Markdown"), false);
+  // Even a delivered input event cannot replace an existing article.
+  chooseMarkdownFile(page, markdownFile("# Unexpected replacement"));
+  await page.settle();
+  assert.equal(page.field("Title").props.value, "Draft Delta");
+  assert.deepEqual(page.calls.created, []);
+});
+
+test("Markdown front matter fills editable metadata and saves only its body as a draft after review", async () => {
+  const page = await createPage({ status: "draft", initialArticles: [] });
+  const body = "# Uploaded article\n\nA **complete** article.\n\n```mermaid\ngraph LR\n  A-->B\n```\n";
+  const source = "\uFEFF" + [
+    "---", 'title: "Uploaded article"', "slug: uploaded-custom", "status: published", "id: 999", "author_id: 888", "created_at: 2020-01-01",
+    'seo_title: "Uploaded SEO"', "category: Technology", "subcategory: Guides", 'tags: ["data, science", "analysis"]',
+    'keywords: [\'a "quoted" phrase\', "file, import"]', "host_site: explainit.tech", "language: en", "excerpt: Imported excerpt",
+    "reading_time: 17", "is_featured: true", "meta_description: Imported description", "canonical_url: https://explainit.tech/uploaded-custom",
+    "schema_type: BlogPosting", "open_graph_title: Social title", "open_graph_description: Social description",
+    "open_graph_image: https://example.com/social.png", "featured_image_url: https://example.com/hero.png", "image_alt_text: Diagram of the process", "---",
+  ].join("\r\n") + "\r\n" + body.replace(/\n/g, "\r\n");
+  const input = chooseMarkdownFile(page, markdownFile(source, "article.MARKDOWN"));
+  assert.equal(input.value, "", "Clear the input so choosing the same file can fire another change");
+  await page.settle();
+  assert.deepEqual(page.calls.created, [], "Importing must not create a server draft before review");
+  assert.equal(page.field("Title").props.value, "Uploaded article");
+  assert.equal(page.find((node) => node.props["aria-label"] === "Article Markdown").props.value, body);
+  assert.equal(page.find((node) => node.props["aria-label"] === "Article content").props.ref.current.innerHTML, "");
+  const feedback = textContent(page.find((node) => node.props.role === "status"));
+  assert.match(feedback, /Loaded article\.MARKDOWN/);
+  assert.match(feedback, /Ignored metadata fields: status, id, author_id, created_at\./);
+  page.fill(page.field("Title"), "Reviewed article");
+  page.click(page.button("Next Step"));
+  page.render();
+  assert.equal(page.field("Slug").props.value, "uploaded-custom");
+  assert.equal(page.field("Status").props.value, "draft");
+  assert.equal(page.disabled(page.field("Status")), true);
+  assert.equal(page.field("Reading Time (minutes)").props.value, "17");
+  assert.equal(page.field("Tags (comma separated)").props.value, '"data, science", analysis');
+  assert.equal(page.field("Keywords (comma separated)").props.value, '"a ""quoted"" phrase", "file, import"');
+  page.fill(page.field("Category"), "Reviewed category");
+  assert.deepEqual(page.calls.created, []);
+  page.click(page.button("Save Draft"));
+  await page.settle();
+  assert.equal(page.calls.created.length, 1);
+  const created = page.calls.created[0];
+  assert.equal(created.title, "Reviewed article");
+  assert.equal(created.slug, "uploaded-custom");
+  assert.equal(created.status, "draft");
+  assert.equal(created.content, body);
+  assert.equal(created.reading_time, 17);
+  assert.equal(created.category, "Reviewed category");
+  assert.equal(created.subcategory, "Guides");
+  assert.deepEqual(Array.from(created.tags), ["data, science", "analysis"]);
+  assert.deepEqual(Array.from(created.keywords), ['a "quoted" phrase', "file, import"]);
+  for (const [field, expected] of Object.entries({
+    seo_title: "Uploaded SEO", host_site: "explainit.tech", language: "en", excerpt: "Imported excerpt", is_featured: true,
+    meta_description: "Imported description", canonical_url: "https://explainit.tech/uploaded-custom", schema_type: "BlogPosting",
+    open_graph_title: "Social title", open_graph_description: "Social description", open_graph_image: "https://example.com/social.png",
+    featured_image_url: "https://example.com/hero.png", image_alt_text: "Diagram of the process",
+  })) assert.equal(created[field], expected, field);
+  for (const systemField of ["id", "author_id", "created_at"]) assert.equal(Object.hasOwn(created, systemField), false);
+  assert.equal(page.toast().message, "Draft created successfully.");
+  page.button("Save Changes");
+  assert.equal(page.field("Reading Time (minutes)").props.value, "17");
+  page.fill(page.field("Status"), "published");
+  page.click(page.button("Publish Changes"));
+  await page.settle();
+  assert.equal(page.calls.updated.length, 1);
+  assert.equal(page.calls.updated[0].payload.status, "published");
+  assert.equal(page.calls.updated[0].payload.reading_time, 17);
+  assert.equal(page.calls.updated[0].payload.content, body);
+});
+
+test("plain Markdown imports derive a title and slug and remain unsaved until Save Draft", async () => {
+  const page = await createPage({ status: "draft" });
+  chooseMarkdownFile(page, markdownFile("# Plain Markdown\n\nBody without front matter.\n"));
+  await page.settle();
+  assert.equal(page.field("Title").props.value, "Plain Markdown");
+  page.click(page.button("Next Step"));
+  page.render();
+  assert.equal(page.field("Slug").props.value, "plain-markdown");
+  assert.equal(page.field("Host Site").props.value, "explainit.tech");
+  assert.equal(page.field("Reading Time (minutes)").props.value, "");
+  assert.deepEqual(page.calls.created, []);
+  page.click(page.button("Save Draft"));
+  await page.settle();
+  assert.equal(page.calls.created[0].content, "# Plain Markdown\n\nBody without front matter.\n");
+  assert.equal(Object.hasOwn(page.calls.created[0], "reading_time"), false);
+});
+
+test("reopening an imported draft preserves full Markdown during a metadata-only save", async () => {
+  const page = await createPage({ status: "draft", initialArticles: [] });
+  const body = [
+    "# Markdown features", "", "![Process diagram](https://example.com/process.png)", "",
+    "> A quoted observation.", ">", "> Its second paragraph.", "", "- Parent item", "  - Nested item", "",
+    "~~~python", 'print("preserve this fence")', "~~~", "",
+  ].join("\n");
+  chooseMarkdownFile(page, markdownFile("---\ntitle: Markdown features\ncategory: Original category\n---\n" + body));
+  await page.settle();
+  page.click(page.button("Save Draft"));
+  await page.settle();
+  assert.equal(page.calls.created.length, 1);
+  assert.equal(page.calls.created[0].content, body);
+  page.click(page.button("Back To Table"));
+  await page.settle();
+  page.click(page.rows()[0]);
+  await page.settle();
+  assert.equal(page.find((node) => node.props["aria-label"] === "Article Markdown").props.value, body);
+  page.click(page.button("Next Step"));
+  page.render();
+  page.fill(page.field("Category"), "Reviewed category");
+  page.click(page.button("Save Changes"));
+  await page.settle();
+  assert.equal(page.calls.created.length, 1);
+  assert.equal(page.calls.updated.length, 1);
+  assert.equal(page.calls.updated[0].payload.category, "Reviewed category");
+  assert.equal(page.calls.updated[0].payload.content, body);
+});
+
+test("invalid Markdown files preserve the existing form and allow choosing the same file again", async () => {
+  const page = await createPage({ status: "draft" });
+  page.click(page.button(/^New draft$/i));
+  await page.settle();
+  page.fill(page.field("Title"), "Keep this title");
+  page.fill(page.find((node) => node.type === "input" && node.props.type === "checkbox"), true);
+  page.fill(page.find((node) => node.props["aria-label"] === "Article Markdown"), "Keep this body");
+  let wrongExtensionReads = 0;
+  let oversizedReads = 0;
+  const malformed = markdownFile("---\ntitle: [broken\n---\nBody", "retry.md");
+  const cases = [
+    [malformed, /YAML front matter is invalid/],
+    [markdownFile("# Too large", "large.md", { size: 2 * 1024 * 1024 + 1, arrayBuffer: async () => { oversizedReads += 1; return new ArrayBuffer(0); } }), /2 MiB or smaller/],
+    [markdownFile("# Wrong type", "article.txt", { arrayBuffer: async () => { wrongExtensionReads += 1; return new ArrayBuffer(0); } }), /ending in \.md or \.markdown/],
+    [markdownFile("# Unreadable", "unreadable.md", { arrayBuffer: async () => { throw new Error("The file could not be read."); } }), /The file could not be read/],
+    [markdownFile("invalid", "invalid-utf8.md", { arrayBuffer: async () => Uint8Array.from([0x23, 0x20, 0xff]).buffer }), /UTF-8/],
+  ];
+  for (const [file, expected] of cases) {
+    const input = chooseMarkdownFile(page, file);
+    assert.equal(input.value, "");
+    await page.settle();
+    assert.match(textContent(page.find((node) => node.props.role === "alert")), expected);
+    assert.equal(page.field("Title").props.value, "Keep this title");
+    assert.equal(page.find((node) => node.props["aria-label"] === "Article Markdown").props.value, "Keep this body");
+    assert.equal(page.button("Save Draft").props.disabled, false);
+    assert.deepEqual(page.calls.created, []);
+  }
+  assert.equal(wrongExtensionReads, 0);
+  assert.equal(oversizedReads, 0);
+  chooseMarkdownFile(page, markdownFile("# Retried file\n\nRead successfully.", malformed.name));
+  await page.settle();
+  assert.equal(page.has((node) => node.props.role === "alert"), false);
+  assert.equal(page.field("Title").props.value, "Retried file");
+  assert.deepEqual(page.calls.created, []);
+});
+
+test("a pending Markdown read blocks saves, navigation, edits, and duplicate imports before rerender", async () => {
+  let resolveRead;
+  let reads = 0;
+  const readPromise = new Promise((resolve) => { resolveRead = resolve; });
+  const page = await createPage({ status: "draft" });
+  page.click(page.button(/^New draft$/i));
+  await page.settle();
+  page.fill(page.field("Title"), "Existing unsaved draft");
+  const onChange = page.find((node) => node.props["aria-label"] === "Upload Markdown draft").props.onChange;
+  const save = page.button("Save Draft").props.onClick;
+  const back = page.button("Back To Table").props.onClick;
+  const editTitle = page.field("Title").props.onChange;
+  const file = markdownFile("ignored until resolved", "pending.md", { arrayBuffer: () => { reads += 1; return readPromise; } });
+  const first = chooseMarkdownFile(page, file, onChange);
+  const duplicate = chooseMarkdownFile(page, file, onChange);
+  save();
+  back();
+  editTitle({ target: { value: "Must not overwrite" } });
+  assert.equal(first.value, "");
+  assert.equal(duplicate.value, "");
+  assert.equal(reads, 1);
+  assert.deepEqual(page.calls.created, []);
+  page.render();
+  assert.equal(page.field("Title").props.value, "Existing unsaved draft");
+  assert.equal(page.disabled(page.field("Title")), true);
+  assert.equal(page.button("Save Draft").props.disabled, true);
+  assert.equal(page.button("Back To Table").props.disabled, true);
+  assert.equal(page.button("Next Step").props.disabled, true);
+  assert.equal(page.button("Reading Markdown...").props.disabled, true);
+  assert.equal(page.find((node) => node.props["aria-label"] === "Article content").props.contentEditable, false);
+  resolveRead(await markdownFile("# Finished read\n\nImported after reading.").arrayBuffer());
+  await page.settle();
+  assert.equal(page.field("Title").props.value, "Finished read");
+  assert.equal(page.button("Save Draft").props.disabled, false);
+  assert.equal(reads, 1);
+  assert.deepEqual(page.calls.created, []);
+});
+
+test("imported raw HTML is escaped when the user switches to the rich text editor", async () => {
+  const page = await createPage({ status: "draft" });
+  const source = '# HTML sample\n\n<img src=x onerror="alert(1)">\n\n<script>alert(2)</script>\n\n<strong>Example markup</strong>';
+  chooseMarkdownFile(page, markdownFile(source));
+  await page.settle();
+  assert.equal(page.find((node) => node.props["aria-label"] === "Article Markdown").props.value, source);
+  const sourceToggle = page.find((node) => node.type === "input" && node.props.type === "checkbox" && node.props.checked === true);
+  page.fill(sourceToggle, false);
+  const html = page.find((node) => node.props["aria-label"] === "Article content").props.ref.current.innerHTML;
+  assert.match(html, /&lt;img src=x onerror=&quot;alert\(1\)&quot;&gt;/);
+  assert.match(html, /&lt;script&gt;alert\(2\)&lt;\/script&gt;/);
+  assert.match(html, /&lt;strong&gt;Example markup&lt;\/strong&gt;/);
+  assert.doesNotMatch(html, /<(?:img|script|strong)\b/i);
+  assert.deepEqual(page.calls.created, []);
 });
 
 test("saving an edited draft keeps it in the Drafts table", async () => {
