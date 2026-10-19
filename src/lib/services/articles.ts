@@ -6,6 +6,19 @@ export type ArticleDeleteResult = {
   deleted_count: number;
 };
 
+type DraftCreatePayload = Pick<Article, "title" | "slug"> &
+  Partial<Omit<Article, "id" | "created_at" | "updated_at" | "published_at" | "drafted_at" | "status" | "content">> & {
+    content: string;
+    status?: "draft";
+  };
+
+export async function createDraft(payload: DraftCreatePayload): Promise<Article> {
+  return apiFetch<Article>("/admin/articles", {
+    method: "POST",
+    body: JSON.stringify({ ...payload, status: "draft" }),
+  });
+}
+
 export async function getArticles(status?: "draft" | "published"): Promise<Article[]> {
   const query = new URLSearchParams();
   if (status) {
@@ -25,7 +38,7 @@ export async function getArticle(articleId: number): Promise<Article> {
 
 export async function updateArticle(
   articleId: number,
-  payload: Partial<Article>
+  payload: Partial<Article> & { expected_updated_at?: string | null }
 ): Promise<Article> {
   return apiFetch(`/admin/articles/${articleId}`, {
     method: "PUT",

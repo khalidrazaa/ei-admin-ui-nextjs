@@ -13,6 +13,7 @@ import VideoFilters, {
   VideoFilterValues,
 } from "@/components/ui/VideoFilters";
 import VideoCard from "@/components/ui/VideoCard";
+import YouTubeScanNotice from "@/components/ui/YouTubeScanNotice";
 import {
   addKeyword,
   createNiche,
@@ -24,8 +25,9 @@ import {
   updateNicheStatus,
 } from "@/lib/services/niche";
 import { toVideoListParams } from "@/lib/utils/videoFilters";
-import { getVideosByNiche } from "@/lib/services/videos";
-import { TrendVideo, VideosPagination, VideoTrendStage } from "@/types/types";
+import { getPopularScanSettings, getVideosByNiche } from "@/lib/services/videos";
+import { getYouTubeScanDisabledReason } from "@/lib/utils/youtubeScanControls";
+import { PopularScanSettings, TrendVideo, VideosPagination, VideoTrendStage } from "@/types/types";
 const TREND_STAGES: VideoTrendStage[] = [
   "watchlist",
   "emerging",
@@ -130,6 +132,10 @@ function NichesPageContent() {
   const [loadingVideos, setLoadingVideos] = useState(false);
   const [videoError, setVideoError] = useState<string | null>(null);
   const [scanningNiche, setScanningNiche] = useState(false);
+  const [scanSettings, setScanSettings] = useState<PopularScanSettings | null>(null);
+  const [scanSettingsLoading, setScanSettingsLoading] = useState(true);
+  const [scanSettingsError, setScanSettingsError] = useState<string | null>(null);
+  const scanDisabledReason = getYouTubeScanDisabledReason(scanSettings, "niche", scanSettingsLoading, scanSettingsError);
   const [scanMessage, setScanMessage] = useState<string | null>(null);
   const [scanMessageType, setScanMessageType] = useState<"success" | "error" | null>(
     null
@@ -232,6 +238,22 @@ function NichesPageContent() {
       { scroll: false }
     );
   }
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadScanSettings() {
+      try {
+        const settings = await getPopularScanSettings();
+        if (!cancelled) setScanSettings(settings);
+      } catch (err) {
+        if (!cancelled) setScanSettingsError(err instanceof Error ? err.message : "Failed to load YouTube scan settings.");
+      } finally {
+        if (!cancelled) setScanSettingsLoading(false);
+      }
+    }
+    void loadScanSettings();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     async function load() {
@@ -465,7 +487,7 @@ function NichesPageContent() {
   }
 
   async function handleManualScan() {
-    if (!selectedNicheId) {
+    if (!selectedNicheId || scanningNiche || scanDisabledReason) {
       return;
     }
 
@@ -651,7 +673,7 @@ function NichesPageContent() {
                       placeholder="New niche name"
                       value={newNiche}
                       onChange={(event) => setNewNiche(event.target.value)}
-                      className="w-full rounded border border-green-500 px-2 py-0.5 text-sm"
+                      className="w-full rounded border border-gray-300 px-2 py-0.5 text-sm"
                     />
                   </div>
 
@@ -724,7 +746,9 @@ function NichesPageContent() {
                 }
               />
 
-              <div className="flex max-w-md justify-end gap-3">
+              <div className="flex max-w-md flex-col items-end gap-2">
+
+                <YouTubeScanNotice reason={scanDisabledReason} />
 
                 {scanMessage && (
                   <span
@@ -742,7 +766,7 @@ function NichesPageContent() {
 
                 <Button
                   onClick={handleManualScan}
-                  disabled={scanningNiche}
+                  disabled={scanningNiche || Boolean(scanDisabledReason)}
                   //className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {scanningNiche ? "Scanning" : "Scan Now"}

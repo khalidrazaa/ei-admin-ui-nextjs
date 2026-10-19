@@ -2,8 +2,63 @@
 
 import { useState, useEffect } from "react";
 import ProtectedPageShell from "@/components/layout/ProtectedPageShell";
+import Table, { type TableColumn } from "@/components/ui/Table";
 import { getKeywords, scrapeTrends, getTrendsData } from "@/lib/services/keyword";
 import { Trend } from "@/types/types";
+
+function getExploreLink(value?: string): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
+const trendColumns: TableColumn<Trend>[] = ([
+  { id: "trend", header: "Trend", accessor: "trend" },
+  { id: "category", header: "Category", render: (item) => item.category ?? "-" },
+  { id: "subcategory", header: "Subcategory", render: (item) => item.subcategory ?? "-" },
+  {
+    id: "search_volume",
+    header: "Search Volume",
+    render: (item) => item.search_volume?.toLocaleString?.() ?? "-",
+  },
+  { id: "is_growing", header: "Is Growing", render: (item) => item.is_growing ? "Yes" : "No" },
+  { id: "status", header: "Status", accessor: "status" },
+  {
+    id: "started",
+    header: "Started",
+    render: (item) => item.started ? new Date(item.started).toLocaleString() : "-",
+  },
+  {
+    id: "ended",
+    header: "Ended",
+    render: (item) => item.ended ? new Date(item.ended).toLocaleString() : "-",
+  },
+  {
+    id: "last_updated",
+    header: "Last Updated",
+    render: (item) => item.last_updated ? new Date(item.last_updated).toLocaleString() : "-",
+  },
+  {
+    id: "explore_link",
+    header: "Explore Link",
+    render: (item) => {
+      const href = getExploreLink(item.explore_link);
+      return href ? (
+        <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+          Explore
+        </a>
+      ) : "-";
+    },
+  },
+] satisfies TableColumn<Trend>[]).map((column) => ({
+  ...column,
+  headerClassName: "border border-gray-300 px-4 py-2 font-semibold",
+  className: "border border-gray-300 px-4 py-2",
+}));
 
 export default function TrendsPage() {
   const [keyword, setKeyword] = useState("");
@@ -169,63 +224,15 @@ export default function TrendsPage() {
         </div>
         <div>
           <h2 className="text-lg font-semibold mb-2">Trends Data</h2>
-          <div className="overflow-x-auto">
-          <table className="min-w-full border-collapse border border-gray-300">
-            <thead>
-              <tr>
-                <th className="border border-gray-300 px-4 py-2">Trend</th>
-                <th className="border border-gray-300 px-4 py-2">Category</th>
-                <th className="border border-gray-300 px-4 py-2">Subcategory</th>
-                <th className="border border-gray-300 px-4 py-2">Search Volume</th>
-                <th className="border border-gray-300 px-4 py-2">Is Growing</th>
-                <th className="border border-gray-300 px-4 py-2">Status</th>
-                <th className="border border-gray-300 px-4 py-2">Started</th>
-                <th className="border border-gray-300 px-4 py-2">Ended</th>
-                <th className="border border-gray-300 px-4 py-2">Last Updated</th>
-                <th className="border border-gray-300 px-4 py-2">Explore Link</th>
-              </tr>
-            </thead>
-            <tbody>
-              {trendsList.length === 0 ? (
-                <tr>
-                  <td colSpan={10} className="text-center p-4">
-                    No trends found
-                  </td>
-                </tr>
-              ) : (
-                trendsList.map((item) => (
-                  <tr key={item._id} className="hover:bg-gray-100">
-                    <td className="border border-gray-300 px-4 py-2">{item.trend}</td>
-                    <td className="border border-gray-300 px-4 py-2">
-                      {item.category ?? "-"}
-                    </td>
-                    <td className="border border-gray-300 px-4 py-2">
-                      {item.subcategory ?? "-"}
-                    </td>
-                    <td className="border border-gray-300 px-4 py-2">
-                      {item.search_volume?.toLocaleString?.() ?? "-"}
-                    </td>
-                    <td className="border border-gray-300 px-4 py-2">
-                      {item.is_growing ? "Yes" : "No"}
-                    </td>
-                    <td className="border border-gray-300 px-4 py-2">{item.status}</td>
-                    <td className="border border-gray-300 px-4 py-2">
-                      {item.started ? new Date(item.started).toLocaleString() : "-"}
-                    </td>
-                    <td className="border border-gray-300 px-4 py-2">
-                      {item.ended ? new Date(item.ended).toLocaleString() : "-"}
-                    </td>
-                    <td className="border border-gray-300 px-4 py-2">
-                      {item.last_updated
-                        ? new Date(item.last_updated).toLocaleString()
-                        : "-"}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-          </div>
+          <Table
+            data={trendsList}
+            columns={trendColumns}
+            getRowKey={(item) => item._id}
+            ariaLabel="Trends data"
+            emptyMessage="No trends found"
+            rowClassName="hover:bg-gray-100"
+            tableClassName="min-w-full border-collapse border border-gray-300"
+          />
         </div>
       </>
     </ProtectedPageShell>

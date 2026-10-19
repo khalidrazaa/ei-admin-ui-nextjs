@@ -5,18 +5,13 @@ import { useRouter, useSearchParams } from "next/navigation";
 
 import ProtectedPageShell from "@/components/layout/ProtectedPageShell";
 import Toast from "@/components/ui/Toast";
+import ConfirmModal from "@/components/ui/ConfirmModal";
 import {
   getPopularScanRegions,
   getPopularScanSettings,
   refreshPopularScanRegions,
   updatePopularScanSettings,
 } from "@/lib/services/videos";
-import {
-  createDraftPrompt,
-  deleteDraftPrompt,
-  getDraftPrompts,
-  updateDraftPrompt,
-} from "@/lib/services/draft-prompts";
 import {
   createHostSite,
   deleteHostSite,
@@ -29,7 +24,6 @@ import {
   revokePublicApiKey,
 } from "@/lib/services/public-api-keys";
 import {
-  DraftPrompt,
   HostSite,
   PublicApiKey,
   PopularScanSettings,
@@ -38,17 +32,20 @@ import {
 
 import HostSiteSettingsPanel from "./components/HostSiteSettingsPanel";
 import PopularSettingsPanel from "./components/PopularSettingsPanel";
-import PromptSettingsPanel from "./components/PromptSettingsPanel";
+import ResearchSourcesSettingsPanel from "./components/ResearchSourcesSettingsPanel";
 
 const DEFAULT_SCAN_SETTINGS: PopularScanSettings = {
+  youtube_scan_enabled: false,
+  popular_scan_enabled: false,
+  niche_scan_enabled: false,
   region_codes: ["US"],
   max_results: 10,
 };
 
 const SETTINGS_TABS = [
-  { key: "youtube-popular", label: "Youtube Popular" },
-  { key: "prompts", label: "Prompts" },
+  { key: "youtube-popular", label: "YouTube Scans" },
   { key: "host-sites", label: "Host Sites" },
+  { key: "research-sources", label: "Research Sources" },
 ] as const;
 
 type SettingsTab = (typeof SETTINGS_TABS)[number]["key"];
@@ -83,6 +80,8 @@ function SettingsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const activeTab = resolveTab(searchParams.get("tab"));
+  const [researchSourcesDirty, setResearchSourcesDirty] = useState(false);
+  const [pendingTab, setPendingTab] = useState<SettingsTab | null>(null);
 
   const [message, setMessage] = useState<string | null>(null);
   const [messageType, setMessageType] = useState<"success" | "error" | "info" | null>(
@@ -92,17 +91,12 @@ function SettingsPageContent() {
     useState<PopularScanSettings>(DEFAULT_SCAN_SETTINGS);
   const [availableRegions, setAvailableRegions] = useState<YouTubeRegion[]>([]);
   const [settingsLoading, setSettingsLoading] = useState(true);
+  const [settingsLoadError, setSettingsLoadError] = useState<string | null>(null);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [settingsReloadVersion, setSettingsReloadVersion] = useState(0);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [regionsRefreshing, setRegionsRefreshing] = useState(false);
   const [regionSearch, setRegionSearch] = useState("");
-  const [prompts, setPrompts] = useState<DraftPrompt[]>([]);
-  const [promptsLoading, setPromptsLoading] = useState(true);
-  const [promptSaving, setPromptSaving] = useState(false);
-  const [promptDeleting, setPromptDeleting] = useState(false);
-  const [selectedPromptId, setSelectedPromptId] = useState<number | null>(null);
-  const [promptName, setPromptName] = useState("");
-  const [promptText, setPromptText] = useState("");
-  const [promptActive, setPromptActive] = useState(true);
   const [hostSites, setHostSites] = useState<HostSite[]>([]);
   const [hostSitesLoading, setHostSitesLoading] = useState(true);
   const [hostSiteSaving, setHostSiteSaving] = useState(false);
@@ -162,57 +156,54 @@ function SettingsPageContent() {
   }, [message, messageType]);
 
   useEffect(() => {
+    if (activeTab !== "youtube-popular") return;
+    let cancelled = false;
     async function loadPopularScanConfig() {
       try {
         setSettingsLoading(true);
+        setSettingsLoaded(false);
+        setSettingsLoadError(null);
         const settings = await getPopularScanSettings();
-        setScanSettings({
-          region_codes: settings.region_codes,
-          max_results: settings.max_results,
-        });
-
+        if (cancelled) return;
         const storedRegions = settings.available_regions ?? [];
         if (storedRegions.length > 0) {
           setAvailableRegions(storedRegions);
         } else {
-          const regions = await getPopularScanRegions();
-          setAvailableRegions(
-            regions.length > 0
-              ? regions
-              : settings.region_codes.map((code) => ({ code, name: code }))
-          );
+          try {
+            const regions = await getPopularScanRegions();
+            if (cancelled) return;
+            setAvailableRegions(
+              regions.length > 0
+                ? regions
+                : settings.region_codes.map((code) => ({ code, name: code }))
+            );
+          } catch (err) {
+            if (cancelled) return;
+            console.error("Failed to load YouTube regions", err);
+            setAvailableRegions(settings.region_codes.map((code) => ({ code, name: code })));
+            setMessage("Region list unavailable. Showing saved regions; scan settings can still be saved.");
+            setMessageType("info");
+          }
         }
+        setScanSettings(settings);
+        setSettingsLoaded(true);
       } catch (err) {
-        console.error("Failed to load popular scan settings", err);
-        setMessage("Failed to load popular scan settings");
-        setMessageType("error");
+        if (cancelled) return;
+        console.error("Failed to load YouTube scan settings", err);
+        setSettingsLoadError(err instanceof Error ? err.message : "Failed to load YouTube scan settings.");
       } finally {
-        setSettingsLoading(false);
+        if (!cancelled) setSettingsLoading(false);
       }
     }
 
     void loadPopularScanConfig();
-  }, []);
+    return () => { cancelled = true; };
+  }, [activeTab, settingsReloadVersion]);
+
+
 
   useEffect(() => {
-    async function loadPrompts() {
-      try {
-        setPromptsLoading(true);
-        const data = await getDraftPrompts();
-        setPrompts(data);
-      } catch (err) {
-        console.error("Failed to load prompts", err);
-        setMessage("Failed to load prompts");
-        setMessageType("error");
-      } finally {
-        setPromptsLoading(false);
-      }
-    }
-
-    void loadPrompts();
-  }, []);
-
-  useEffect(() => {
+    if (activeTab !== "host-sites") return;
     async function loadHostSites() {
       try {
         setHostSitesLoading(true);
@@ -228,9 +219,10 @@ function SettingsPageContent() {
     }
 
     void loadHostSites();
-  }, []);
+  }, [activeTab]);
 
   useEffect(() => {
+    if (activeTab !== "host-sites") return;
     async function loadApiKeys() {
       try {
         setApiKeysLoading(true);
@@ -246,7 +238,7 @@ function SettingsPageContent() {
     }
 
     void loadApiKeys();
-  }, []);
+  }, [activeTab]);
 
   async function refreshPublicApiKeys() {
     try {
@@ -275,22 +267,20 @@ function SettingsPageContent() {
   }
 
   async function handleSaveScanSettings() {
+    if (!settingsLoaded || settingsLoading || settingsSaving || scanSettings.region_codes.length === 0) return;
     try {
       setSettingsSaving(true);
-      setMessage("Saving popular scan settings...");
+      setMessage("Saving YouTube scan settings...");
       setMessageType("info");
 
       const saved = await updatePopularScanSettings(scanSettings);
-      setScanSettings({
-        region_codes: saved.region_codes,
-        max_results: saved.max_results,
-      });
-      setMessage("Popular scan settings saved.");
+      setScanSettings(saved);
+      setMessage("YouTube scan settings saved.");
       setMessageType("success");
     } catch (err) {
-      console.error("Failed to save popular scan settings", err);
+      console.error("Failed to save YouTube scan settings", err);
       setMessage(
-        err instanceof Error ? err.message : "Failed to save popular scan settings"
+        err instanceof Error ? err.message : "Failed to save YouTube scan settings"
       );
       setMessageType("error");
     } finally {
@@ -314,89 +304,6 @@ function SettingsPageContent() {
       setMessageType("error");
     } finally {
       setRegionsRefreshing(false);
-    }
-  }
-
-  function resetPromptForm() {
-    setSelectedPromptId(null);
-    setPromptName("");
-    setPromptText("");
-    setPromptActive(true);
-  }
-
-  function selectPrompt(prompt: DraftPrompt) {
-    setSelectedPromptId(prompt.id);
-    setPromptName(prompt.name);
-    setPromptText(prompt.prompt);
-    setPromptActive(prompt.is_active);
-  }
-
-  async function handleSavePrompt() {
-    const name = promptName.trim();
-    const prompt = promptText.trim();
-
-    if (!name || !prompt) {
-      setMessage("Prompt name and prompt are required.");
-      setMessageType("error");
-      return;
-    }
-
-    try {
-      setPromptSaving(true);
-      setMessage("Saving prompt...");
-      setMessageType("info");
-
-      const saved = selectedPromptId
-        ? await updateDraftPrompt(selectedPromptId, {
-            name,
-            prompt,
-            is_active: promptActive,
-          })
-        : await createDraftPrompt({
-            name,
-            prompt,
-            is_active: promptActive,
-          });
-
-      setPrompts((current) => {
-        const exists = current.some((item) => item.id === saved.id);
-        if (exists) {
-          return current.map((item) => (item.id === saved.id ? saved : item));
-        }
-        return [saved, ...current];
-      });
-      selectPrompt(saved);
-      setMessage("Prompt saved.");
-      setMessageType("success");
-    } catch (err) {
-      console.error("Failed to save prompt", err);
-      setMessage(err instanceof Error ? err.message : "Failed to save prompt");
-      setMessageType("error");
-    } finally {
-      setPromptSaving(false);
-    }
-  }
-
-  async function handleDeletePrompt() {
-    if (!selectedPromptId) {
-      return;
-    }
-
-    try {
-      setPromptDeleting(true);
-      setMessage("Deleting prompt...");
-      setMessageType("info");
-      await deleteDraftPrompt(selectedPromptId);
-      setPrompts((current) => current.filter((prompt) => prompt.id !== selectedPromptId));
-      resetPromptForm();
-      setMessage("Prompt deleted.");
-      setMessageType("success");
-    } catch (err) {
-      console.error("Failed to delete prompt", err);
-      setMessage(err instanceof Error ? err.message : "Failed to delete prompt");
-      setMessageType("error");
-    } finally {
-      setPromptDeleting(false);
     }
   }
 
@@ -537,6 +444,14 @@ function SettingsPageContent() {
   }
 
   function selectTab(tab: SettingsTab) {
+    if (activeTab === "research-sources" && researchSourcesDirty && tab !== activeTab) {
+      setPendingTab(tab);
+      return;
+    }
+    navigateTab(tab);
+  }
+
+  function navigateTab(tab: SettingsTab) {
     const params = new URLSearchParams(searchParams.toString());
     params.set("tab", tab);
     router.replace(`/settings?${params.toString()}`, { scroll: false });
@@ -579,21 +494,17 @@ function SettingsPageContent() {
         <div>
           <h2 className="text-2xl font-semibold text-gray-900">
             {activeTab === "youtube-popular"
-              ? "Youtube Popular Scan Settings"
-              : activeTab === "prompts"
-                ? "Draft Prompts"
-                : activeTab === "host-sites"
+              ? "YouTube Scan Settings"
+              : activeTab === "host-sites"
                   ? "Host Site Settings"
-              : "Settings"}
+              : activeTab === "research-sources" ? "Research Sources" : "Settings"}
           </h2>
           <p className="mt-1 text-sm text-gray-500">
             {activeTab === "youtube-popular"
-              ? "Choose scan regions and fetch limits for YouTube popular videos."
-              : activeTab === "prompts"
-                ? "Write reusable draft prompts for transcript article generation."
-                : activeTab === "host-sites"
+              ? "Enable YouTube video scans and choose popular scan regions and limits."
+              : activeTab === "host-sites"
                   ? "Define host sites and manage their frontend API keys."
-              : "Manage shared app settings."}
+              : activeTab === "research-sources" ? "Manage sources and instructions shared by new research runs." : "Manage shared app settings."}
           </p>
         </div>
 
@@ -604,8 +515,14 @@ function SettingsPageContent() {
             regionSearch={regionSearch}
             scanSettings={scanSettings}
             settingsLoading={settingsLoading}
+            settingsLoadError={settingsLoadError}
+            settingsLoaded={settingsLoaded}
             settingsSaving={settingsSaving}
             regionsRefreshing={regionsRefreshing}
+            onRetry={() => setSettingsReloadVersion((version) => version + 1)}
+            onScanControlChange={(key, enabled) =>
+              setScanSettings((current) => ({ ...current, [key]: enabled }))
+            }
             onRegionSearchChange={setRegionSearch}
             onMaxResultsChange={(value) => {
               setScanSettings((current) => ({
@@ -628,25 +545,7 @@ function SettingsPageContent() {
           />
         ) : null}
 
-        {activeTab === "prompts" ? (
-          <PromptSettingsPanel
-            prompts={prompts}
-            selectedPromptId={selectedPromptId}
-            promptName={promptName}
-            promptText={promptText}
-            promptActive={promptActive}
-            loading={promptsLoading}
-            saving={promptSaving}
-            deleting={promptDeleting}
-            onSelectPrompt={selectPrompt}
-            onNewPrompt={resetPromptForm}
-            onNameChange={setPromptName}
-            onPromptChange={setPromptText}
-            onActiveChange={setPromptActive}
-            onSave={() => void handleSavePrompt()}
-            onDelete={() => void handleDeletePrompt()}
-          />
-        ) : null}
+
 
         {activeTab === "host-sites" ? (
           <HostSiteSettingsPanel
@@ -676,6 +575,22 @@ function SettingsPageContent() {
           />
         ) : null}
 
+        {activeTab === "research-sources" ? <ResearchSourcesSettingsPanel onDirtyChange={setResearchSourcesDirty}/> : null}
+        <ConfirmModal
+          open={pendingTab !== null}
+          title="Discard unsaved research settings?"
+          message="Switch settings tabs and discard your research settings edits?"
+          confirmText="Discard and switch"
+          cancelText="Keep editing"
+          onCancel={() => setPendingTab(null)}
+          onConfirm={() => {
+            if (pendingTab) {
+              setResearchSourcesDirty(false);
+              navigateTab(pendingTab);
+              setPendingTab(null);
+            }
+          }}
+        />
         <Toast
           message={message}
           type={messageType}
