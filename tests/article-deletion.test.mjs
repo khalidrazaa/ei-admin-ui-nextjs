@@ -18,6 +18,7 @@ function compile(relativePath) {
 
 const compiledService = compile("../src/lib/services/articles.ts");
 const compiledPage = compile("../src/app/(protected)/articles/page.tsx");
+const compiledManager = compile("../src/components/content/ArticleManager.tsx");
 const compiledConfirmModal = compile("../src/components/ui/ConfirmModal.tsx");
 const compiledButton = compile("../src/components/ui/Button.tsx");
 const compiledTable = compile("../src/components/ui/Table.tsx");
@@ -47,6 +48,22 @@ function loadTable(jsxRuntime) {
   vm.runInNewContext(compiledTable, context);
   return context.exports;
 }
+
+test("Articles route renders the shared article manager with published defaults", () => {
+  const ArticleManager = () => {};
+  const context = {
+    exports: {},
+    require: (name) => {
+      if (name === "@/components/content/ArticleManager") return { __esModule: true, default: ArticleManager };
+      assert.equal(name, "react/jsx-runtime");
+      return { jsx: (type, props) => ({ type, props }) };
+    },
+  };
+  vm.runInNewContext(compiledPage, context);
+  const tree = context.exports.default();
+  assert.equal(tree.type, ArticleManager);
+  assert.equal(tree.props.status ?? "published", "published");
+});
 
 test("article deletion services send single and bulk requests and return server results", async () => {
   const calls = [];
@@ -91,6 +108,25 @@ test("article list service preserves its route and accepts published or draft qu
   ]);
 });
 
+test("manual draft creation posts its fields and always requests draft status", async () => {
+  const calls = [];
+  const result = { id: 15, title: "Manual draft", slug: "manual-draft", status: "draft" };
+  const context = { exports: {}, require: (name) => {
+    assert.equal(name, "@/lib/api");
+    return { apiFetch: async (endpoint, options) => {
+      calls.push({ endpoint, options });
+      return result;
+    } };
+  } };
+  vm.runInNewContext(compiledService, context);
+  const payload = { title: "Manual draft", slug: "manual-draft", host_site: "example.com", content: "", category: "Manual", status: "published" };
+  assert.equal(await context.exports.createDraft(payload), result);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].endpoint, "/admin/articles");
+  assert.equal(calls[0].options.method, "POST");
+  assert.deepEqual(JSON.parse(calls[0].options.body), { ...payload, status: "draft" });
+});
+
 const articles = [
   { id: 1, title: "Alpha", slug: "alpha", category: "Tech", status: "published" },
   { id: 2, title: "Beta", slug: "beta", category: "Tech", status: "published" },
@@ -117,10 +153,10 @@ function* walk(node, ancestors = []) {
 
 // Run the real page with deterministic hooks and JSX nodes. Dependencies are
 // mocked at module boundaries; assertions use rendered controls and events.
-async function createPage({ deleteResult, deleteFailures = [], deletePromise, updatePromise, listFailures = [], articleFailures = [], search = "" } = {}) {
+async function createPage({ deleteResult, deleteFailures = [], deletePromise, updatePromise, createFailures = [], createPromise, editorDocument, listFailures = [], articleFailures = [], search = "", status = "published", sidebarExtra, onRefresh, initialArticles = articles, unfilteredList = false } = {}) {
   const slots = [];
-  const calls = { single: [], bulk: [], edited: [], updated: [], listed: 0, listStatuses: [] };
-  const storedArticles = articles.map((article) => ({ ...article }));
+  const calls = { single: [], bulk: [], edited: [], updated: [], created: [], listed: 0, listStatuses: [] };
+  const storedArticles = initialArticles.map((article) => ({ ...article }));
   let cursor = 0;
   let dirty = true;
   let effects = [];
@@ -200,13 +236,27 @@ async function createPage({ deleteResult, deleteFailures = [], deletePromise, up
         calls.listStatuses.push(status);
         const failure = listFailures.shift();
         if (failure) throw failure;
-        return storedArticles.filter((article) => !status || article.status === status).map((article) => ({ ...article }));
+        return storedArticles.filter((article) => unfilteredList || !status || article.status === status).map((article) => ({ ...article }));
       },
       getArticle: async (id) => {
         calls.edited.push(id);
         const failure = articleFailures.shift();
         if (failure) throw failure;
         return storedArticles.find((article) => article.id === id);
+      },
+      createDraft: async (payload) => {
+        calls.created.push(payload);
+        const failure = createFailures.shift();
+        if (failure) throw failure;
+        const created = createPromise ? await createPromise : {
+          ...payload,
+          id: Math.max(0, ...storedArticles.map((article) => article.id)) + 1,
+          status: "draft",
+          created_at: "2026-10-18T10:00:00Z",
+          updated_at: "2026-10-18T10:00:00Z",
+        };
+        storedArticles.push({ ...created });
+        return { ...created };
       },
       updateArticle: async (id, payload) => {
         calls.updated.push({ id, payload });
@@ -219,11 +269,18 @@ async function createPage({ deleteResult, deleteFailures = [], deletePromise, up
       deleteArticles: async (ids) => { calls.bulk.push(Array.from(ids)); return remove(Array.from(ids)); },
     },
   };
+  const location = { search, pathname: status === "draft" ? "/draft" : "/articles" };
+  Object.defineProperty(location, "href", {
+    get: () => `${location.pathname}${location.search}`,
+    set: () => { assert.fail("Opening or closing an article must stay inside its current page"); },
+  });
   const context = {
     exports: {}, Error, URLSearchParams,
+    document: editorDocument,
+    Node: { TEXT_NODE: 3, ELEMENT_NODE: 1 },
     console: { error: () => {} },
     window: {
-      location: { search },
+      location,
       confirm: () => { assert.fail("Article deletion must use the shared ConfirmModal"); },
       setTimeout: () => 1,
       clearTimeout: () => {},
@@ -233,14 +290,14 @@ async function createPage({ deleteResult, deleteFailures = [], deletePromise, up
       return modules[name];
     },
   };
-  vm.runInNewContext(compiledPage, context);
+  vm.runInNewContext(compiledManager, context);
   function render() {
     for (let iteration = 0; dirty; iteration += 1) {
       assert.ok(iteration < 20, "Page did not settle after state updates");
       dirty = false;
       cursor = 0;
       effects = [];
-      tree = context.exports.default();
+      tree = context.exports.default({ status, sidebarExtra, onRefresh });
       for (const effect of effects) effect();
     }
   }
@@ -285,7 +342,26 @@ async function createPage({ deleteResult, deleteFailures = [], deletePromise, up
     return { stopped, prevented };
   }
   const page = {
-    calls, render, settle, find, click, key,
+    calls, render, settle, find, click, key, location,
+    has: (predicate) => Array.from(walk(tree)).some(({ node }) => predicate(node)),
+    button: (label) => find((node) => node.type === "button" && (typeof label === "string" ? textContent(node) === label : label.test(textContent(node)))),
+    field: (label) => {
+      const wrapper = find((node) => node.type === "label" && textContent(node.props.children?.[0]).trim() === label);
+      return find((node) => ["input", "select", "textarea"].includes(node.type), wrapper);
+    },
+    fill: (node, value) => {
+      const match = Array.from(walk(tree)).find((entry) => entry.node === node);
+      assert.ok(match, "Changed control is not mounted");
+      if (node.props.disabled || match.ancestors.some((ancestor) => ancestor.type === "fieldset" && ancestor.props.disabled)) return;
+      node.props.onChange({ target: { value, checked: value } });
+      render();
+    },
+    disabled: (node) => {
+      const match = Array.from(walk(tree)).find((entry) => entry.node === node);
+      assert.ok(match, "Control is not mounted");
+      return Boolean(node.props.disabled || match.ancestors.some((ancestor) => ancestor.type === "fieldset" && ancestor.props.disabled));
+    },
+    shell: () => find((node) => node.type === Shell).props,
     table: () => find((node) => node.type === "table"),
     checkbox: (label) => find((node) => node.type === "input" && node.props["aria-label"] === label, page.table()),
     deleteButton: (title) => find((node) => node.type === "button" && node.props["aria-label"] === `Delete ${title}`, page.table()),
@@ -391,6 +467,416 @@ test("publishing a draft opened by its article deep link reloads the published t
   page.render();
   assert.equal(page.rows().length, 1);
   assert.match(textContent(page.rows()[0]), /Draft Delta/);
+});
+
+test("Drafts filters its rows and category counts by status even if the API returns published articles", async () => {
+  const page = await createPage({ status: "draft", unfilteredList: true });
+  assert.deepEqual(page.calls.listStatuses, ["draft"]);
+  assert.equal(page.shell().title, "Drafts");
+  assert.equal(page.table().props["aria-label"], "Drafted articles");
+  assert.equal(page.rows().length, 1);
+  assert.match(textContent(page.rows()[0]), /Draft Delta/);
+  assert.doesNotMatch(textContent(page.table()), /Alpha|Beta|Gamma/);
+  assert.equal(textContent(page.category("All Categories")), "All Categories1");
+  assert.equal(textContent(page.category("Draft Only")), "Draft Only1");
+  assert.equal(page.categories().includes("Tech"), false);
+});
+
+test("Draft rows open and close the full article editor inside Drafts", async () => {
+  const sidebarExtra = { type: "a", props: { href: "/topics", children: "Manage topics and research" } };
+  const page = await createPage({ status: "draft", sidebarExtra });
+  page.find((node) => node.props.href === "/topics");
+  page.click(page.rows()[0]);
+  await page.settle();
+  assert.deepEqual(page.calls.edited, [4]);
+  assert.equal(page.shell().title, "Drafts");
+  assert.equal(page.location.pathname, "/draft");
+  page.find((node) => node.type === "input" && node.props.value === "Draft Delta");
+  page.find((node) => node.props["aria-label"] === "Article content");
+  page.click(page.find((node) => node.type === "button" && textContent(node) === "Next Step"));
+  page.render();
+  page.find((node) => node.type === "select" && node.props.value === "draft");
+  page.find((node) => node.type === "button" && textContent(node) === "Save Changes");
+  page.click(page.find((node) => node.type === "button" && textContent(node) === "Back To Table"));
+  await page.settle();
+  assert.equal(page.shell().title, "Drafts");
+  assert.equal(page.rows().length, 1);
+  assert.equal(page.location.pathname, "/draft");
+});
+
+test("New draft opens a blank editor within Drafts and leaving it creates nothing", async () => {
+  const published = await createPage();
+  assert.equal(published.has((node) => node.type === "button" && /^New draft$/i.test(textContent(node))), false);
+
+  const page = await createPage({ status: "draft" });
+  page.click(page.button(/^New draft$/i));
+  await page.settle();
+  assert.equal(page.shell().title, "Drafts");
+  assert.equal(page.location.pathname, "/draft");
+  assert.equal(page.field("Title").props.value, "");
+  assert.equal(page.find((node) => node.props["aria-label"] === "Article content").props.ref.current.innerHTML, "");
+  page.button("Save Draft");
+  assert.deepEqual(page.calls.created, []);
+  assert.deepEqual(page.calls.edited, []);
+  page.fill(page.field("Title"), "Unsaved title");
+  page.click(page.button("Back To Table"));
+  await page.settle();
+  assert.equal(page.rows().length, 1);
+  assert.deepEqual(page.calls.created, []);
+  page.click(page.button(/^New draft$/i));
+  await page.settle();
+  assert.equal(page.field("Title").props.value, "");
+  page.click(page.button("Next Step"));
+  page.render();
+  assert.equal(page.field("Slug").props.value, "");
+  assert.equal(page.field("Status").props.value, "draft");
+  assert.equal(page.disabled(page.field("Status")), true);
+});
+
+test("manual drafts generate slugs from titles until the slug is edited", async () => {
+  const page = await createPage({ status: "draft" });
+  page.click(page.button(/^New draft$/i));
+  await page.settle();
+  page.fill(page.field("Title"), "  A Fresh Draft!  ");
+  page.click(page.button("Next Step"));
+  page.render();
+  assert.equal(page.field("Slug").props.value, "a-fresh-draft");
+  page.fill(page.field("Slug"), "custom-manual-slug");
+  page.click(page.button("Previous Step"));
+  page.render();
+  page.fill(page.field("Title"), "A Changed Draft");
+  page.click(page.button("Next Step"));
+  page.render();
+  assert.equal(page.field("Slug").props.value, "custom-manual-slug");
+  assert.deepEqual(page.calls.created, []);
+});
+
+test("manual draft validation blocks missing title, slug, and host site", async () => {
+  const page = await createPage({ status: "draft" });
+  page.click(page.button(/^New draft$/i));
+  await page.settle();
+  page.click(page.button("Save Draft"));
+  page.render();
+  assert.equal(page.toast().message, "Title is required.");
+  assert.deepEqual(page.calls.created, []);
+  page.fill(page.field("Title"), "New draft");
+  page.click(page.button("Next Step"));
+  page.render();
+  page.fill(page.field("Slug"), "   ");
+  page.click(page.button("Save Draft"));
+  page.render();
+  assert.equal(page.toast().message, "Slug is required.");
+  assert.deepEqual(page.calls.created, []);
+  page.fill(page.field("Slug"), "new-draft");
+  page.fill(page.field("Host Site"), "   ");
+  page.click(page.button("Save Draft"));
+  page.render();
+  assert.equal(page.toast().message, "Host site is required.");
+  assert.deepEqual(page.calls.created, []);
+  page.fill(page.field("Host Site"), "explainit.tech");
+  page.click(page.button("Save Draft"));
+  await page.settle();
+  assert.equal(page.calls.created.length, 1);
+  assert.equal(page.calls.created[0].content, "");
+  assert.equal(page.calls.created[0].status, "draft");
+});
+
+test("an empty Drafts page can create its first manual draft with rich text preserved across steps", async () => {
+  const html = "<p>A <strong>handwritten</strong> story.</p>";
+  const text = (textContent) => ({ nodeType: 3, textContent });
+  const element = (tagName, childNodes) => ({ nodeType: 1, tagName, childNodes });
+  let parsed = 0;
+  const editorDocument = {
+    createElement: (tagName) => {
+      assert.equal(tagName, "div");
+      return {
+        set innerHTML(value) {
+          // Stand in for browser parsing; conversion still uses the real manager.
+          assert.equal(value, html);
+          parsed += 1;
+          this.childNodes = [element("P", [text("A "), element("STRONG", [text("handwritten")]), text(" story.")])];
+        },
+      };
+    },
+  };
+  const page = await createPage({ status: "draft", initialArticles: [], editorDocument });
+  assert.equal(textContent(page.category("All Categories")), "All Categories0");
+  page.click(page.button(/^New draft$/i));
+  await page.settle();
+  page.fill(page.field("Title"), "First manual draft");
+  const editor = page.find((node) => node.props["aria-label"] === "Article content");
+  editor.props.ref.current.innerHTML = html;
+  editor.props.onInput();
+  page.click(page.button("Next Step"));
+  page.render();
+  page.fill(page.field("Category"), "Handwritten");
+  page.click(page.button("Previous Step"));
+  page.render();
+  assert.equal(page.find((node) => node.props["aria-label"] === "Article content").props.ref.current.innerHTML, html);
+  page.click(page.button("Next Step"));
+  page.render();
+  page.click(page.button("Save Draft"));
+  await page.settle();
+  assert.equal(parsed, 1);
+  assert.equal(page.calls.created.length, 1);
+  assert.equal(page.calls.created[0].content, "A **handwritten** story.");
+  page.click(page.button("Back To Table"));
+  await page.settle();
+  assert.equal(page.rows().length, 1);
+  assert.match(textContent(page.rows()[0]), /First manual draft/);
+  assert.equal(textContent(page.category("Handwritten")), "Handwritten1");
+});
+
+test("a manually saved draft preserves Markdown and metadata, appears in the table, and reopens for updates", async () => {
+  const page = await createPage({ status: "draft" });
+  page.click(page.category("Draft Only"));
+  page.render();
+  page.fill(page.find((node) => node.props["aria-label"] === "Search drafted articles"), "Delta");
+  page.click(page.button(/^New draft$/i));
+  await page.settle();
+  page.fill(page.field("Title"), "  Manual story  ");
+  // Use Markdown editing to verify content without replacing the browser DOM parser.
+  page.find((node) => node.props["aria-label"] === "Article content").props.ref.current.innerHTML = "";
+  page.fill(page.find((node) => node.type === "input" && node.props.type === "checkbox" && typeof node.props.checked === "boolean"), true);
+  const content = "# Manual story\n\nA **handwritten** draft.\n\n```mermaid\ngraph LR\n A-->B\n```";
+  page.fill(page.find((node) => node.props["aria-label"] === "Article Markdown"), content);
+  page.click(page.button("Next Step"));
+  page.render();
+  page.fill(page.field("Slug"), "manual-story-custom");
+  page.fill(page.field("Category"), "  Handwritten  ");
+  page.fill(page.field("SEO Title"), "Manual story SEO");
+  page.fill(page.field("Tags (comma separated)"), "manual, editing");
+  page.fill(page.field("Keywords (comma separated)"), "story, draft");
+  page.fill(page.field("Excerpt"), "Written from the admin page");
+  page.fill(page.field("Meta Description"), "An editor-created story");
+  page.click(page.button("Save Draft"));
+  await page.settle();
+  const [created] = page.calls.created;
+  assert.equal(created.title, "Manual story");
+  assert.equal(created.slug, "manual-story-custom");
+  assert.equal(created.status, "draft");
+  assert.equal(created.content, content);
+  assert.equal(created.category, "Handwritten");
+  assert.equal(created.seo_title, "Manual story SEO");
+  assert.deepEqual(Array.from(created.tags), ["manual", "editing"]);
+  assert.deepEqual(Array.from(created.keywords), ["story", "draft"]);
+  assert.equal(created.excerpt, "Written from the admin page");
+  assert.equal(created.meta_description, "An editor-created story");
+  assert.equal(page.toast().type, "success");
+  page.button("Save Changes");
+  assert.equal(page.disabled(page.field("Status")), false);
+  page.click(page.button("Back To Table"));
+  await page.settle();
+  assert.equal(page.rows().length, 2);
+  assert.equal(page.find((node) => node.props["aria-label"] === "Search drafted articles").props.value, "");
+  assert.equal(textContent(page.category("All Categories")), "All Categories2");
+  assert.equal(textContent(page.category("Handwritten")), "Handwritten1");
+  const row = page.rows().find((node) => /Manual story/.test(textContent(node)));
+  assert.ok(row);
+  page.click(row);
+  await page.settle();
+  assert.equal(page.field("Title").props.value, "Manual story");
+  assert.equal(page.find((node) => node.props["aria-label"] === "Article Markdown").props.value, content);
+  page.fill(page.field("Title"), "Manual story revised");
+  page.find((node) => node.props["aria-label"] === "Article content").props.ref.current.innerHTML = "";
+  page.click(page.button("Save Changes"));
+  await page.settle();
+  assert.equal(page.calls.created.length, 1);
+  assert.equal(page.calls.updated.length, 1);
+  assert.equal(page.calls.updated[0].id, 5);
+  assert.equal(page.calls.updated[0].payload.title, "Manual story revised");
+  assert.equal(page.calls.updated[0].payload.content, content);
+  assert.equal(page.location.pathname, "/draft");
+});
+
+test("failed manual draft creation retains entered content and metadata for retry", async () => {
+  const page = await createPage({ status: "draft", createFailures: [new Error("A draft with this slug already exists.")] });
+  page.click(page.button(/^New draft$/i));
+  await page.settle();
+  page.fill(page.field("Title"), "Retry draft");
+  page.find((node) => node.props["aria-label"] === "Article content").props.ref.current.innerHTML = "";
+  page.fill(page.find((node) => node.type === "input" && node.props.type === "checkbox"), true);
+  page.fill(page.find((node) => node.props["aria-label"] === "Article Markdown"), "Preserved draft body");
+  page.click(page.button("Next Step"));
+  page.render();
+  page.fill(page.field("Category"), "Original category");
+  page.fill(page.field("Slug"), "already-exists");
+  page.click(page.button("Save Draft"));
+  await page.settle();
+  assert.equal(page.toast().type, "error");
+  assert.equal(page.toast().message, "A draft with this slug already exists.");
+  assert.equal(page.field("Slug").props.value, "already-exists");
+  assert.equal(page.field("Category").props.value, "Original category");
+  page.fill(page.field("Slug"), "retry-draft-unique");
+  page.click(page.button("Previous Step"));
+  page.render();
+  assert.equal(page.field("Title").props.value, "Retry draft");
+  assert.equal(page.find((node) => node.props["aria-label"] === "Article Markdown").props.value, "Preserved draft body");
+  page.click(page.button("Save Draft"));
+  await page.settle();
+  assert.equal(page.calls.created.length, 2);
+  assert.equal(page.calls.created[1].slug, "retry-draft-unique");
+  assert.equal(page.calls.created[1].category, "Original category");
+  assert.equal(page.calls.created[1].content, "Preserved draft body");
+  page.button("Save Changes");
+});
+
+test("pending manual draft creation blocks navigation, edits, and duplicate saves before rerender", async () => {
+  let resolveCreation;
+  const createPromise = new Promise((resolve) => { resolveCreation = resolve; });
+  const page = await createPage({ status: "draft", createPromise });
+  page.click(page.button(/^New draft$/i));
+  await page.settle();
+  page.fill(page.field("Title"), "Pending draft");
+  const save = page.button("Save Draft").props.onClick;
+  save();
+  save();
+  page.render();
+  assert.equal(page.calls.created.length, 1);
+  assert.equal(page.button("Saving...").props.disabled, true);
+  assert.equal(page.button("Back To Table").props.disabled, true);
+  assert.equal(page.button("Next Step").props.disabled, true);
+  assert.equal(page.disabled(page.field("Title")), true);
+  assert.equal(page.find((node) => node.props["aria-label"] === "Article content").props.contentEditable, false);
+  page.click(page.button("Back To Table"));
+  page.fill(page.field("Title"), "Should remain pending");
+  assert.equal(page.field("Title").props.value, "Pending draft");
+  resolveCreation({ ...page.calls.created[0], id: 5, status: "draft", created_at: null, updated_at: null });
+  await page.settle();
+  assert.equal(page.calls.created.length, 1);
+  assert.equal(page.field("Title").props.value, "Pending draft");
+  page.button("Save Changes");
+  page.click(page.button("Back To Table"));
+  await page.settle();
+  assert.equal(page.rows().length, 2);
+});
+
+test("saving an edited draft keeps it in the Drafts table", async () => {
+  const page = await createPage({ status: "draft" });
+  page.click(page.rows()[0]);
+  await page.settle();
+  page.find((node) => node.type === "input" && node.props.value === "Draft Delta").props.onChange({ target: { value: "Updated Draft Delta" } });
+  page.render();
+  page.find((node) => node.props["aria-label"] === "Article content").props.ref.current.innerHTML = "";
+  page.click(page.find((node) => node.type === "button" && textContent(node) === "Save Changes"));
+  await page.settle();
+  assert.equal(page.calls.updated[0].id, 4);
+  assert.equal(page.calls.updated[0].payload.status, "draft");
+  assert.equal(page.calls.updated[0].payload.title, "Updated Draft Delta");
+  assert.equal(page.toast().type, "success");
+  page.click(page.find((node) => node.type === "button" && textContent(node) === "Back To Table"));
+  await page.settle();
+  assert.equal(page.rows().length, 1);
+  assert.match(textContent(page.rows()[0]), /Updated Draft Delta/);
+  assert.equal(textContent(page.category("Draft Only")), "Draft Only1");
+});
+
+test("publishing from Drafts removes the draft, its selection, and its emptied category without leaving Drafts", async () => {
+  const page = await createPage({ status: "draft" });
+  page.click(page.category("Draft Only"));
+  page.render();
+  page.change(page.checkbox("Select Draft Delta"));
+  page.click(page.rows()[0]);
+  await page.settle();
+  page.find((node) => node.props["aria-label"] === "Article content").props.ref.current.innerHTML = "";
+  page.click(page.find((node) => node.type === "button" && textContent(node) === "Next Step"));
+  page.render();
+  page.find((node) => node.type === "select" && node.props.value === "draft").props.onChange({ target: { value: "published" } });
+  page.render();
+  page.click(page.find((node) => node.type === "button" && textContent(node) === "Publish Changes"));
+  await page.settle();
+  assert.equal(page.calls.updated[0].id, 4);
+  assert.equal(page.calls.updated[0].payload.status, "published");
+  assert.equal(page.shell().title, "Drafts");
+  assert.equal(page.location.pathname, "/draft");
+  page.click(page.find((node) => node.type === "button" && textContent(node) === "Back To Table"));
+  await page.settle();
+  assert.equal(textContent(page.category("All Categories")), "All Categories0");
+  assert.equal(page.categories().includes("Draft Only"), false);
+  assert.equal(page.bulkButton().props.disabled, true);
+  page.find((node) => node.props["aria-live"] === "polite" && textContent(node) === "0 selected");
+  page.find((node) => node.type === "p" && /All Categories/.test(textContent(node)));
+});
+
+test("Draft deep links load the editor and return to the Drafts table", async () => {
+  const page = await createPage({ status: "draft", search: "?article=4" });
+  await page.settle();
+  assert.deepEqual(page.calls.listStatuses, ["draft"]);
+  assert.deepEqual(page.calls.edited, [4]);
+  assert.equal(page.shell().title, "Drafts");
+  page.find((node) => node.type === "input" && node.props.value === "Draft Delta");
+  page.click(page.find((node) => node.type === "button" && textContent(node) === "Back To Table"));
+  await page.settle();
+  assert.equal(page.rows().length, 1);
+  assert.match(textContent(page.rows()[0]), /Draft Delta/);
+  assert.equal(page.location.pathname, "/draft");
+  page.click(page.find((node) => node.type === "button" && textContent(node) === "Refresh"));
+  await page.settle();
+  assert.deepEqual(page.calls.edited, [4]);
+  assert.equal(page.rows().length, 1);
+});
+
+const draftInventory = [
+  ...articles,
+  { ...articles[3], id: 5, title: "Draft Echo", slug: "draft-echo" },
+  { ...articles[3], id: 6, title: "Draft Foxtrot", slug: "draft-foxtrot", category: "Other Drafts" },
+];
+
+test("Draft search limits visible selection and refresh keeps the draft filter", async () => {
+  let sidebarRefreshes = 0;
+  const page = await createPage({ status: "draft", initialArticles: draftInventory, onRefresh: () => { sidebarRefreshes += 1; } });
+  page.find((node) => node.props["aria-label"] === "Search drafted articles").props.onChange({ target: { value: "draft-echo" } });
+  page.render();
+  assert.equal(page.rows().length, 1);
+  assert.match(textContent(page.rows()[0]), /Draft Echo/);
+  page.change(page.checkbox("Select all articles in this category"));
+  page.click(page.bulkButton());
+  page.render();
+  assert.match(page.modal().message, /Draft Echo/);
+  page.cancel();
+  page.click(page.find((node) => node.type === "button" && textContent(node) === "Refresh"));
+  await page.settle();
+  assert.deepEqual(page.calls.listStatuses, ["draft", "draft"]);
+  assert.equal(sidebarRefreshes, 1);
+  assert.equal(page.rows().length, 1);
+  assert.match(textContent(page.rows()[0]), /Draft Echo/);
+});
+
+test("Draft row deletion uses the single endpoint and preserves other draft selection", async () => {
+  const page = await createPage({ status: "draft", initialArticles: draftInventory });
+  page.change(page.checkbox("Select Draft Echo"));
+  page.click(page.deleteButton("Draft Delta"));
+  page.render();
+  assert.match(page.modal().message, /Draft Delta/);
+  assert.deepEqual(page.calls.edited, []);
+  page.confirm();
+  await page.settle();
+  assert.deepEqual(page.calls.single, [4]);
+  assert.deepEqual(page.calls.bulk, []);
+  assert.equal(page.rows().length, 2);
+  assert.equal(page.checkbox("Select Draft Echo").props.checked, true);
+  assert.equal(textContent(page.category("Draft Only")), "Draft Only1");
+  assert.equal(textContent(page.category("All Categories")), "All Categories2");
+});
+
+test("Draft bulk deletion targets only the visible draft category and resets its emptied category", async () => {
+  const page = await createPage({ status: "draft", initialArticles: draftInventory });
+  page.click(page.category("Draft Only"));
+  page.render();
+  page.change(page.checkbox("Select all articles in this category"));
+  page.click(page.bulkButton());
+  page.render();
+  assert.match(page.modal().message, /2 selected articles/);
+  page.confirm();
+  await page.settle();
+  assert.deepEqual(page.calls.single, []);
+  assert.deepEqual(page.calls.bulk, [[4, 5]]);
+  assert.equal(page.rows().length, 1);
+  assert.match(textContent(page.rows()[0]), /Draft Foxtrot/);
+  assert.equal(page.categories().includes("Draft Only"), false);
+  assert.equal(textContent(page.category("All Categories")), "All Categories1");
+  assert.equal(page.bulkButton().props.disabled, true);
+  assert.equal(page.shell().title, "Drafts");
 });
 
 test("article list failures show the API error and can be retried", async () => {

@@ -2,6 +2,7 @@ import { apiFetch } from "@/lib/api";
 import {
           PopularScanRunResponse,
           PopularScanSettings,
+          PopularScanRunSettings,
           PopularVideo,
           YouTubeRegion,
           GetVideosByKeywordParams,
@@ -38,17 +39,26 @@ export async function updatePopularScanSettings(
 ): Promise<PopularScanSettings> {
   return apiFetch("/admin/yt-scan/popular/settings", {
     method: "PUT",
-    body: JSON.stringify(settings),
+    body: JSON.stringify({
+      youtube_scan_enabled: settings.youtube_scan_enabled,
+      popular_scan_enabled: settings.popular_scan_enabled,
+      niche_scan_enabled: settings.niche_scan_enabled,
+      region_codes: settings.region_codes,
+      max_results: settings.max_results,
+    }),
   }) as Promise<PopularScanSettings>;
 }
 
 export async function scanPopularVideos(
-  settings?: PopularScanSettings
+  settings?: PopularScanRunSettings
 ): Promise<PopularScanRunResponse> {
   return apiFetch("/admin/yt-scan/popular/scan", {
     method: "POST",
     timeoutMs: 0,
-    body: settings ? JSON.stringify(settings) : undefined,
+    body: settings ? JSON.stringify({
+      region_codes: settings.region_codes,
+      max_results: settings.max_results,
+    }) : undefined,
   }) as Promise<PopularScanRunResponse>;
 }
 

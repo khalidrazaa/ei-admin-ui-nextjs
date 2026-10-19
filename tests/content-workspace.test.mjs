@@ -39,13 +39,13 @@ async function mount(mode='all'){
     throw new Error('Unexpected call '+path);
   };
   const jsx={jsx:(type,props,key)=>({type,props:props||{},key}),jsxs:(type,props,key)=>({type,props:props||{},key})};
-  const modules={react:hooks,'react/jsx-runtime':jsx,'next/link':{default:'a'},'./ArticleMarkdown':{default:()=>null},'@/components/ui/Button':'button','@/components/layout/ProtectedPageShell':{default:'shell'},'@/components/ui/Sidebar':{default:'sidebar'},'@/lib/services/content-workflow':{call,getWorkspace:async()=>structuredClone(data),topicPath:id=>`content-topics/${id}`}};
+  const modules={react:hooks,'react/jsx-runtime':jsx,'next/link':{default:'a'},'./ArticleMarkdown':{default:()=>null},'@/components/ui/Button':'button','@/components/layout/ProtectedPageShell':{default:'shell'},'@/components/ui/Sidebar':{default:'sidebar'},'@/lib/services/content-workflow':{call,getWorkspace:async()=>{calls.push({path:'workspace-read'});return structuredClone(data);},topicPath:id=>`content-topics/${id}`}};
   const context={exports:{},URLSearchParams,crypto:{randomUUID},Date,JSON,Number,window:{location:{search:'?topic=EXPLAINIT-011'},addEventListener(){},removeEventListener(){},confirm:()=>true},setInterval:fn=>{interval=fn;return 1;},clearInterval(){},require:n=>{assert.ok(n in modules,n);return modules[n];}};
   vm.runInNewContext(code,context);
   async function settle(){for(let j=0;j<8;j++){while(dirty){dirty=false;cursor=0;effects=[];tree=context.exports.default({mode});for(const effect of effects)effect();}await new Promise(r=>setImmediate(r));}}
   await settle();
   const findButton=label=>[...walk(tree)].find(n=>n.type==='button'&&text(n)===label);
-  return {calls,data,settle,setMode:async next=>{mode=next;dirty=true;await settle();},refresh:async()=>{await interval();await settle();},get tree(){return tree;},async click(label){const b=findButton(label);assert.ok(b,`Missing ${label}`);assert.ok(!b.props.disabled,`${label} disabled`);b.props.onClick();await settle();},button:findButton};
+  return {calls,data,settle,setMode:async next=>{mode=next;dirty=true;await settle();},poll:async()=>{await interval();await settle();},refresh:async()=>{findButton('Refresh workspace').props.onClick();await settle();},get tree(){return tree;},async click(label){const b=findButton(label);assert.ok(b,`Missing ${label}`);assert.ok(!b.props.disabled,`${label} disabled`);b.props.onClick();await settle();},button:findButton};
 }
 test('research and generation save workspace only; explicit Save to Drafts creates article',async()=>{
   const page=await mount();
@@ -59,7 +59,17 @@ test('research and generation save workspace only; explicit Save to Drafts creat
   await page.click('Save to Drafts');
   assert.equal(page.data.topic.article_id,42);
   assert.equal(page.data.topic.status,'Drafted');
+  assert.match(text(page.tree),/Saved article 42 as draft\. Review in Drafts before publishing\./);
+  const editor=[...walk(page.tree)].find(node=>node.props.href&&text(node)==='Open article editor');
+  assert.equal(editor?.props.href,'/draft?article=42');
   assert.ok(!page.calls.some(c=>c.body?.status==='published'));
+});
+test('published workspace article opens in Articles',async()=>{
+  const page=await mount();
+  await page.click('Begin research');await page.click('Generate article');await page.click('Save to Drafts');
+  page.data.article_status='published';page.data.topic.status='Published';await page.refresh();
+  const editor=[...walk(page.tree)].find(node=>node.props.href&&text(node)==='Open article editor');
+  assert.equal(editor?.props.href,'/articles?article=42');
 });
 test('published article disables research and generation',async()=>{
   const page=await mount();page.data.article_status='published';await page.refresh();
@@ -90,4 +100,37 @@ test('Drafts shows generated content and metadata while research stays in Topics
   assert.ok(page.button('Begin research'));
   assert.equal(page.button('Save to Drafts'),undefined);
   assert.match(text(page.tree),/Review article, metadata and QA in Drafts/);
+});
+
+test('workspace polls only while a job is active',async()=>{
+ const page=await mount();
+ const reads=()=>page.calls.filter(c=>c.path==='workspace-read').length;
+ const idle=reads();await page.poll();assert.equal(reads(),idle);
+ page.data.runs.push({id:'active',stage:'research',status:'queued',inputs:{},created_at:'2026-10-12'});
+ await page.refresh();const active=reads();await page.poll();assert.equal(reads(),active+1);
+ page.data.runs[0].status='failed';await page.poll();const stopped=reads();await page.poll();assert.equal(reads(),stopped);
+});
+
+test('research can start without additional URLs and links to shared source settings',async()=>{
+  const page=await mount('topic');
+  assert.match(text(page.tree),/Additional source URLs \(optional\)/);
+  assert.match(text(page.tree),/Shared sources and research instructions are used automatically/);
+  assert.ok([...walk(page.tree)].find(node=>node.props.href==='/settings?tab=research-sources'));
+  await page.click('Begin research');
+  const saved=page.calls.find(call=>call.method==='PATCH'&&call.path.endsWith('/workspace'));
+  assert.deepEqual(Array.from(saved.body.brief.source_urls),[]);
+  assert.equal(saved.body.brief.audience,'Business leaders, managers, and decision-makers with moderate technical knowledge');
+  assert.ok(page.calls.some(call=>call.body?.stage==='research'));
+});
+
+test('additional topic URLs are saved with the brief without copying shared defaults',async()=>{
+  const page=await mount('topic');
+  const input=[...walk(page.tree)].find(node=>node.type==='textarea'&&node.props['aria-describedby']==='additional-source-help');
+  assert.ok(input);
+  input.props.onChange({target:{value:'  https://topic.example.com/guide  \n  \n https://topic.example.com/evidence \n'}});
+  await page.settle();
+  await page.click('Begin research');
+  const saved=page.calls.find(call=>call.method==='PATCH'&&call.path.endsWith('/workspace'));
+  assert.deepEqual(Array.from(saved.body.brief.source_urls),['https://topic.example.com/guide','https://topic.example.com/evidence']);
+  assert.equal(page.calls.filter(call=>call.path.includes('content-research-settings')).length,0);
 });

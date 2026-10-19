@@ -102,10 +102,18 @@ export interface YouTubeRegion {
 }
 
 export interface PopularScanSettings {
+  youtube_scan_enabled: boolean;
+  popular_scan_enabled: boolean;
+  niche_scan_enabled: boolean;
   region_codes: string[];
   max_results: number;
   available_regions?: YouTubeRegion[];
 }
+
+export type PopularScanRunSettings = Pick<
+  PopularScanSettings,
+  "region_codes" | "max_results"
+>;
 
 export interface PopularScanRunResponse {
   status: string;

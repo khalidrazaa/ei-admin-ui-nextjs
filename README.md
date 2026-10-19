@@ -1,20 +1,53 @@
-Admin dashboard for the ExplainIt backend.
+# ExplainIt admin
 
-## Environment
+Next.js dashboard for topics, research, drafts, articles, trends, and backend settings.
 
-Create `.env.local` and set the local API URL:
+## Setup
+
+Use Node.js 24 (matching Docker):
+
+```bash
+npm ci
+```
+
+Create `.env.local`:
 
 ```env
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/v1
 ```
 
-For production, set `NEXT_PUBLIC_API_BASE_URL` in the build environment (for example, the CI/CD platform's environment-variable settings). It is intentionally public: any variable beginning with `NEXT_PUBLIC_` is embedded in the browser bundle at build time. Never put secrets in it. Restart the development server after changing `.env.local`; rebuild for production changes.
+```bash
+npm run dev -- --port 3001
+```
 
-Ordinary API requests time out after 30 seconds and show an error when the backend cannot be reached or returns an invalid response. Synchronous generation, transcript retrieval, scans, and trend scraping keep their existing unrestricted duration through `apiFetch`'s `timeoutMs: 0` option.
+Open http://localhost:3001 and sign in through backend OTP authentication. Requests include cookies; backend CORS/cookie settings must support the admin origin. `src/proxy.ts` redirects using the `access_token` cookie; the backend validates API access.
 
-## Reusable table
+`NEXT_PUBLIC_API_BASE_URL` is public and embedded at build time: set it before building, restart development after changes, and rebuild production when it changes. Never include secrets.
 
-`src/components/ui/Table.tsx` is used by Articles, Draft, and Trends. Pass `data` to infer columns from the supplied records, or provide `columns` to choose their order, headings, and cell formatting:
+Docker caveat: the Dockerfile declares `NEXT_PUBLIC_API_URL`, but the client reads `NEXT_PUBLIC_API_BASE_URL`. Supply the latter during the build; the declared argument alone does not configure the client.
+
+## Checks and production
+
+```bash
+npm test
+npx eslint src
+npm run build
+npm run start
+```
+
+`npm run lint` still invokes `next lint`, absent in Next.js 16; use ESLint directly. Docker runs the standalone build with `node server.js` on port 3000.
+
+## Content and shared components
+
+Topics → brief → Begin research → Generate article → review versions/QA in Drafts → Save to Drafts → article editor → status `published` → Publish Changes. Backend content workers execute queued jobs. Publishing is manual; QA is advisory, with no separate approval state. Manage reusable source groups and research rules in **Settings -> Research Sources**; per-topic source links are optional extras, and saved settings apply to new research runs.
+
+To write an article manually, open **Drafts -> New draft**, enter its title and content, and use **Next Step** to edit metadata. The slug follows the title until you edit it. **Save Draft** creates an unpublished article and keeps its editor open in Drafts; publishing is available after the draft is saved. An unfinished draft may have empty content.
+
+[`apiFetch`](src/lib/api.ts) defaults to 30-second timeouts and reports unreachable APIs/invalid responses. Long-running service calls opt out with `timeoutMs: 0`.
+
+**Settings -> YouTube Scans** provides three slider switches: **Disable popular YouTube scan**, **Disable all niche scans**, and **Disable all YouTube video scans**. Switch on to disable scanning, then save. Disabling all YouTube videos overrides the individual switches while retaining their preferences. Scan Now uses the saved settings; existing videos remain available to browse.
+
+[`Table`](src/components/ui/Table.tsx) serves Articles, Drafts, and Trends. Pass `data` to infer columns, or explicit typed columns:
 
 ```tsx
 import Table, { type TableColumn } from "@/components/ui/Table";
@@ -22,46 +55,10 @@ import Table, { type TableColumn } from "@/components/ui/Table";
 type Row = { id: number; title: string; status: string };
 const columns: TableColumn<Row>[] = [
   { id: "title", header: "Title", accessor: "title" },
-  { id: "status", header: "Status", render: (row) => row.status.toUpperCase() },
+  { id: "status", header: "Status", render: row => row.status.toUpperCase() },
 ];
-
-// Inside a component, with rows: Row[]:
-<Table data={rows} columns={columns} getRowKey={(row) => row.id} />;
+// With rows: Row[] inside a component:
+<Table data={rows} columns={columns} getRowKey={row => row.id} />;
 ```
 
-Use `onRowClick` for row navigation and `stopRowClick: true` on checkbox or action columns. The table also supports loading and empty messages, disabled rows, keyboard navigation, alignment, and custom classes. Default row keys use `id` or `_id`; supply `getRowKey` for other identifiers.
-
-## Getting Started
-
-First, run the development server:
-
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Use `onRowClick` for navigation and `stopRowClick: true` for action/checkbox columns. Default keys use `id`/`_id`; supply `getRowKey` otherwise. Loading/empty messages, disabled rows, keyboard navigation, alignment, and custom classes are supported.

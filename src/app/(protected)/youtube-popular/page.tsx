@@ -5,9 +5,11 @@ import { useEffect, useMemo, useState } from "react";
 import Button from "@/components/ui/Button";
 import ProtectedPageShell from "@/components/layout/ProtectedPageShell";
 import Toast from "@/components/ui/Toast";
+import YouTubeScanNotice from "@/components/ui/YouTubeScanNotice";
 import Sidebar from "@/components/ui/Sidebar";
 import VideoFilters, { CATEGORY_OPTIONS, VideoFilterValues, VideoPaginationControls } from "@/components/ui/VideoFilters";
 import { EMPTY_VIDEO_FILTERS, toVideoListParams } from "@/lib/utils/videoFilters";
+import { getYouTubeScanDisabledReason } from "@/lib/utils/youtubeScanControls";
 import VideoCard from "@/components/ui/VideoCard";
 import {
   getPopularScanSettings,
@@ -21,10 +23,6 @@ import {
 } from "@/types/types";
 
 const ALL_CATEGORIES = "all";
-const DEFAULT_SCAN_SETTINGS: PopularScanSettings = {
-  region_codes: ["US"],
-  max_results: 10,
-};
 
 function VideoCardSkeleton() {
   return (
@@ -51,8 +49,10 @@ export default function YoutubePopularPage() {
   const [scanning, setScanning] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [messageType, setMessageType] = useState<"success" | "error" | "info" | null>(null);
-  const [scanSettings, setScanSettings] = useState<PopularScanSettings>(DEFAULT_SCAN_SETTINGS);
+  const [scanSettings, setScanSettings] = useState<PopularScanSettings | null>(null);
   const [settingsLoading, setSettingsLoading] = useState(true);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const scanDisabledReason = getYouTubeScanDisabledReason(scanSettings, "popular", settingsLoading, settingsError);
   const [filterValues, setFilterValues] = useState<VideoFilterValues>(EMPTY_VIDEO_FILTERS);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
@@ -115,28 +115,29 @@ export default function YoutubePopularPage() {
   }, [filters, page, reloadVersion]);
 
   useEffect(() => {
+    let cancelled = false;
     async function loadPopularScanConfig() {
       try {
         setSettingsLoading(true);
+        setSettingsError(null);
         const settings = await getPopularScanSettings();
-        setScanSettings({
-          region_codes: settings.region_codes,
-          max_results: settings.max_results,
-        });
-
+        if (!cancelled) setScanSettings(settings);
       } catch (err) {
-        console.error("Failed to load popular scan settings", err);
-        setMessage("Failed to load popular scan settings");
-        setMessageType("error");
+        if (cancelled) return;
+        console.error("Failed to load YouTube scan settings", err);
+        setScanSettings(null);
+        setSettingsError(err instanceof Error ? err.message : "Failed to load YouTube scan settings.");
       } finally {
-        setSettingsLoading(false);
+        if (!cancelled) setSettingsLoading(false);
       }
     }
 
     void loadPopularScanConfig();
+    return () => { cancelled = true; };
   }, []);
 
   async function handleScanNow() {
+    if (scanning || scanDisabledReason || !scanSettings) return;
     try {
       setScanning(true);
       setMessage("Scanning popular YouTube videos with current settings...");
@@ -155,7 +156,7 @@ export default function YoutubePopularPage() {
       setMessageType("success");
     } catch (err) {
       console.error("Failed to scan popular videos", err);
-      setMessage("Failed to scan popular videos");
+      setMessage(err instanceof Error ? err.message : "Failed to scan popular videos");
       setMessageType("error");
     } finally {
       setScanning(false);
@@ -184,12 +185,15 @@ export default function YoutubePopularPage() {
             onReset={() => { setFilterValues(EMPTY_VIDEO_FILTERS); setPage(1); }}
           />
 
-          <Button
-            onClick={handleScanNow}
-            disabled={scanning || settingsLoading || scanSettings.region_codes.length === 0}
-          >
-            {scanning ? "Scanning" : "Scan Now"}
-          </Button>
+          <div className="flex max-w-md flex-col items-end gap-2">
+            <YouTubeScanNotice reason={scanDisabledReason} />
+            <Button
+              onClick={handleScanNow}
+              disabled={scanning || Boolean(scanDisabledReason)}
+            >
+              {scanning ? "Scanning" : "Scan Now"}
+            </Button>
+          </div>
         </div>
 
         {loading ? (
