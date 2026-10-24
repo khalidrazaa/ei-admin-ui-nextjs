@@ -23,6 +23,7 @@ const compiledManager = compile("../src/components/content/ArticleManager.tsx");
 const compiledConfirmModal = compile("../src/components/ui/ConfirmModal.tsx");
 const compiledButton = compile("../src/components/ui/Button.tsx");
 const compiledTable = compile("../src/components/ui/Table.tsx");
+const compiledPagination = compile("../src/components/ui/VideoFilters.tsx");
 const compiledMarkdownDraft = compile("../src/lib/utils/markdownDraft.ts");
 const compiledCsvList = compile("../src/lib/utils/csvList.ts");
 
@@ -123,6 +124,35 @@ test("article list service preserves its route and accepts published or draft qu
   ]);
 });
 
+test("paginated article service sends bounded pages and encoded server filters", async () => {
+  const calls = [];
+  const result = { items: [], page: 3, size: 50, total: 0, total_pages: 0 };
+  const context = { exports: {}, URLSearchParams, require: (name) => {
+    assert.equal(name, "@/lib/api");
+    return { apiFetch: async (endpoint, options) => { calls.push({ endpoint, options }); return result; } };
+  } };
+  vm.runInNewContext(compiledService, context);
+  assert.equal(await context.exports.getArticlePage({ status: "draft", page: 3, size: 50, category: "AI & Tools", search: "  machine learning  " }), result);
+  const url = new URL(calls[0].endpoint, "http://admin.test");
+  assert.deepEqual(Object.fromEntries(url.searchParams), { page: "3", size: "50", status: "draft", category: "AI & Tools", search: "machine learning" });
+  assert.equal(calls[0].options.method, "GET");
+  await context.exports.getArticlePage();
+  assert.equal(calls[1].endpoint, "/admin/articles?page=1&size=20");
+});
+
+test("article category service loads the authenticated category options without article bodies", async () => {
+  const calls = [];
+  const result = ["Culture", "Draft Only", "Tech"];
+  const context = { exports: {}, require: (name) => {
+    assert.equal(name, "@/lib/api");
+    return { apiFetch: async (endpoint, options) => { calls.push({ endpoint, options }); return result; } };
+  } };
+  vm.runInNewContext(compiledService, context);
+  assert.equal(await context.exports.getArticleCategories(), result);
+  assert.equal(calls[0].endpoint, "/admin/articles/categories");
+  assert.equal(calls[0].options.method, "GET");
+});
+
 test("manual draft creation posts its fields and always requests draft status", async () => {
   const calls = [];
   const result = { id: 15, title: "Manual draft", slug: "manual-draft", status: "draft" };
@@ -168,9 +198,9 @@ function* walk(node, ancestors = []) {
 
 // Run the real page with deterministic hooks and JSX nodes. Dependencies are
 // mocked at module boundaries; assertions use rendered controls and events.
-async function createPage({ deleteResult, deleteFailures = [], deletePromise, updatePromise, createFailures = [], createPromise, editorDocument, listFailures = [], articleFailures = [], search = "", status = "published", sidebarExtra, onRefresh, initialArticles = articles, unfilteredList = false } = {}) {
+async function createPage({ deleteResult, deleteFailures = [], deletePromise, updatePromise, createFailures = [], createPromise, editorDocument, listFailures = [], articleFailures = [], categoryFailures = [], search = "", status = "published", sidebarExtra, onRefresh, initialArticles = articles, unfilteredList = false } = {}) {
   const slots = [];
-  const calls = { single: [], bulk: [], edited: [], updated: [], created: [], listed: 0, listStatuses: [], filePickers: 0 };
+  const calls = { single: [], bulk: [], edited: [], updated: [], created: [], listed: 0, listStatuses: [], listParams: [], filePickers: 0, categoryLoads: 0 };
   const storedArticles = initialArticles.map((article) => ({ ...article }));
   let cursor = 0;
   let dirty = true;
@@ -181,6 +211,9 @@ async function createPage({ deleteResult, deleteFailures = [], deletePromise, up
   const ConfirmModal = () => {};
   let Button;
   let Table;
+  let PaginationControls;
+  const searchTimers = new Map();
+  let timerId = 0;
   const dependenciesEqual = (a, b) => a && b && a.length === b.length && a.every((value, index) => Object.is(value, b[index]));
   const hooks = {
     useState(initial) {
@@ -219,7 +252,7 @@ async function createPage({ deleteResult, deleteFailures = [], deletePromise, up
     },
   };
   const jsx = (type, props, key) => {
-    if (type === Button || type === Table) return type(props);
+    if (type === Button || type === Table || type === PaginationControls) return type(props);
     if (props.ref && !props.ref.current) props.ref.current = {
       indeterminate: false, innerHTML: "",
       click: () => { calls.filePickers += 1; },
@@ -231,11 +264,16 @@ async function createPage({ deleteResult, deleteFailures = [], deletePromise, up
   Button = buttonModule.default;
   const tableModule = loadTable(jsxRuntime);
   Table = tableModule.default;
+  const paginationModule = loadUtility(compiledPagination, { "@/components/ui/Button": buttonModule, "react/jsx-runtime": jsxRuntime });
+  PaginationControls = paginationModule.VideoPaginationControls;
   async function remove(ids) {
-    if (deletePromise) return deletePromise;
     const failure = deleteFailures.shift();
     if (failure) throw failure;
-    return deleteResult ?? { deleted_ids: ids, deleted_count: ids.length };
+    const result = deletePromise ? await deletePromise : deleteResult ?? { deleted_ids: ids, deleted_count: ids.length };
+    for (let index = storedArticles.length - 1; index >= 0; index -= 1) {
+      if (result.deleted_ids.includes(storedArticles[index].id)) storedArticles.splice(index, 1);
+    }
+    return result;
   }
   const modules = {
     "@/components/content/ArticleEvidence": { __esModule: true, default: () => null },
@@ -247,16 +285,38 @@ async function createPage({ deleteResult, deleteFailures = [], deletePromise, up
     "@/components/ui/ConfirmModal": { __esModule: true, default: ConfirmModal },
     "@/components/ui/Button": buttonModule,
     "@/components/ui/Table": tableModule,
+    "@/components/ui/VideoFilters": paginationModule,
     "@/lib/services/host-sites": { getHostSites: async () => [] },
     "@/lib/utils/markdownDraft": markdownDraft,
     "@/lib/utils/csvList": csvList,
     "@/lib/services/articles": {
-      getArticles: async (status) => {
+      getArticleCategories: async () => {
+        calls.categoryLoads += 1;
+        const failure = categoryFailures.shift();
+        if (failure) throw failure;
+        return [...new Set(storedArticles.map((article) => article.category?.trim()).filter(Boolean))]
+          .sort((left, right) => left.localeCompare(right));
+      },
+      getArticlePage: async ({ status, page, size, category, search }) => {
         calls.listed += 1;
         calls.listStatuses.push(status);
+        calls.listParams.push({ status, page, size, category, search });
         const failure = listFailures.shift();
         if (failure) throw failure;
-        return storedArticles.filter((article) => unfilteredList || !status || article.status === status).map((article) => ({ ...article }));
+        const scoped = storedArticles.filter((article) => !status || article.status === status);
+        const counts = new Map();
+        for (const article of scoped) {
+          const name = article.category?.trim() || "Uncategorized";
+          counts.set(name, (counts.get(name) ?? 0) + 1);
+        }
+        const matches = storedArticles.filter((article) => (unfilteredList || !status || article.status === status) &&
+          (!category || (article.category?.trim() || "Uncategorized") === category) &&
+          (!search || `${article.title} ${article.slug} ${article.category || ""}`.toLowerCase().includes(search.toLowerCase())));
+        const total_pages = Math.ceil(matches.length / size);
+        return { items: matches.slice((page - 1) * size, page * size).map((article) => ({ ...article })),
+          total: matches.length, page, size, total_pages, has_next: page < total_pages, has_previous: page > 1,
+          categories: [...counts].sort(([a], [b]) => a.localeCompare(b)).map(([name, count]) => ({ name, count })),
+          category_total: scoped.length };
       },
       getArticle: async (id) => {
         calls.edited.push(id);
@@ -280,9 +340,8 @@ async function createPage({ deleteResult, deleteFailures = [], deletePromise, up
       },
       updateArticle: async (id, payload) => {
         calls.updated.push({ id, payload });
-        if (updatePromise) return updatePromise;
         const index = storedArticles.findIndex((article) => article.id === id);
-        storedArticles[index] = { ...storedArticles[index], ...payload };
+        storedArticles[index] = updatePromise ? await updatePromise : { ...storedArticles[index], ...payload };
         return { ...storedArticles[index] };
       },
       deleteArticle: async (id) => { calls.single.push(id); return remove([id]); },
@@ -302,8 +361,8 @@ async function createPage({ deleteResult, deleteFailures = [], deletePromise, up
     window: {
       location,
       confirm: () => { assert.fail("Article deletion must use the shared ConfirmModal"); },
-      setTimeout: () => 1,
-      clearTimeout: () => {},
+      setTimeout: (callback, delay) => { const id = ++timerId; if (delay === 300) searchTimers.set(id, callback); return id; },
+      clearTimeout: (id) => { searchTimers.delete(id); },
     },
     require: (name) => {
       assert.ok(name in modules, `Unexpected dependency: ${name}`);
@@ -322,8 +381,10 @@ async function createPage({ deleteResult, deleteFailures = [], deletePromise, up
     }
   }
   async function settle() {
-    render();
-    await new Promise((resolve) => setImmediate(resolve));
+    for (let iteration = 0; iteration < 6; iteration += 1) {
+      render();
+      await new Promise((resolve) => setImmediate(resolve));
+    }
     render();
   }
   function find(predicate, root = tree) {
@@ -363,6 +424,13 @@ async function createPage({ deleteResult, deleteFailures = [], deletePromise, up
   }
   const page = {
     calls, render, settle, find, click, key, location,
+    flushSearch: async () => {
+      render();
+      const callbacks = [...searchTimers.values()];
+      searchTimers.clear();
+      for (const callback of callbacks) callback();
+      await settle();
+    },
     has: (predicate) => Array.from(walk(tree)).some(({ node }) => predicate(node)),
     button: (label) => find((node) => node.type === "button" && (typeof label === "string" ? textContent(node) === label : label.test(textContent(node)))),
     field: (label) => {
@@ -375,6 +443,10 @@ async function createPage({ deleteResult, deleteFailures = [], deletePromise, up
       if (node.props.disabled || match.ancestors.some((ancestor) => ancestor.type === "fieldset" && ancestor.props.disabled)) return;
       node.props.onChange({ target: { value, checked: value } });
       render();
+    },
+    customCategory: (value) => {
+      page.fill(page.field("Category"), "custom");
+      page.fill(page.field("Custom category"), value);
     },
     disabled: (node) => {
       const match = Array.from(walk(tree)).find((entry) => entry.node === node);
@@ -431,7 +503,7 @@ test("Articles table requests published articles and excludes drafts from rows, 
   assert.equal(textContent(page.category("Tech")), "Tech2");
   assert.equal(textContent(page.category("Culture")), "Culture1");
   assert.equal(page.categories().includes("Draft Only"), false);
-  page.change(page.checkbox("Select all articles in this category"));
+  page.change(page.checkbox("Select all articles on this page"));
   page.click(page.bulkButton());
   page.render();
   page.confirm();
@@ -439,10 +511,280 @@ test("Articles table requests published articles and excludes drafts from rows, 
   assert.deepEqual(page.calls.bulk, [[1, 2, 3]]);
 });
 
+test("Articles and Drafts tables and mobile cards show category with an uncategorized fallback", async () => {
+  for (const status of ["published", "draft"]) {
+    const page = await createPage({ status, initialArticles: [
+      { ...articles[0], status, category: "  Reference  " },
+      { ...articles[1], status, category: "  " },
+      { ...articles[2], status, category: null },
+    ] });
+    const headings = Array.from(walk(page.table())).filter(({ node }) => node.type === "th").map(({ node }) => textContent(node));
+    const categoryIndex = headings.indexOf("Category");
+    assert.equal(categoryIndex, headings.indexOf("Title") + 1);
+    assert.deepEqual(page.rows().map((row) => Array.from(walk(row))
+      .filter(({ node }) => node.type === "td").map(({ node }) => textContent(node))[categoryIndex]),
+    ["Reference", "Uncategorized", "Uncategorized"]);
+    const mobileCards = page.find((node) => node.type === "div" && node.props.className === "divide-y divide-gray-200 lg:hidden");
+    assert.match(textContent(mobileCards), /Reference/);
+    assert.match(textContent(mobileCards), /Uncategorized/);
+  }
+});
+
+test("editor category dropdown includes off-page categories and categories from the other status", async () => {
+  const inventory = [...largeInventory(25), { ...articles[3], id: 99 }];
+  inventory[24].category = "Off-page category";
+  const page = await createPage({ initialArticles: inventory });
+  assert.equal(page.rows().length, 20);
+  assert.doesNotMatch(textContent(page.table()), /Off-page category|Draft Only/);
+  assert.equal(page.calls.categoryLoads, 1);
+  page.click(page.rows()[0]);
+  await page.settle();
+  page.click(page.button("Next Step"));
+  page.render();
+  const category = page.field("Category");
+  assert.equal(category.type, "select");
+  assert.equal(category.props.value, "existing:First page");
+  const options = Array.from(walk(category)).filter(({ node }) => node.type === "option").map(({ node }) => node.props.value);
+  assert.ok(options.includes("existing:Off-page category"));
+  assert.ok(options.includes("existing:Draft Only"));
+  assert.ok(options.includes("custom"));
+  assert.ok(options.includes("none"));
+});
+
+test("existing category selections save and can be cleared in either article editor", async () => {
+  for (const status of ["published", "draft"]) {
+    const page = await createPage({ status });
+    page.click(page.rows()[0]);
+    await page.settle();
+    page.click(page.button("Next Step"));
+    page.render();
+    page.fill(page.field("Category"), "existing:Culture");
+    assert.equal(page.has((node) => node.type === "label" && textContent(node.props.children?.[0]).trim() === "Custom category"), false);
+    page.click(page.button(status === "published" ? "Publish Changes" : "Save Changes"));
+    await page.settle();
+    assert.equal(page.calls.updated[0].payload.category, "Culture");
+    assert.equal(page.field("Category").props.value, "existing:Culture");
+    page.fill(page.field("Category"), "none");
+    page.click(page.button(status === "published" ? "Publish Changes" : "Save Changes"));
+    await page.settle();
+    assert.equal(page.calls.updated[1].payload.category, null);
+    assert.equal(page.field("Category").props.value, "none");
+    page.click(page.button("Back To Table"));
+    await page.settle();
+    assert.match(textContent(page.rows()[0]), /Uncategorized/);
+  }
+});
+
+test("custom category input survives editor steps and becomes reusable after saving a draft", async () => {
+  const page = await createPage({ status: "draft", initialArticles: [] });
+  page.click(page.button(/^New draft$/i));
+  await page.settle();
+  page.fill(page.field("Title"), "A new category");
+  page.click(page.button("Next Step"));
+  page.render();
+  page.customCategory("  Custom research  ");
+  page.click(page.button("Previous Step"));
+  page.render();
+  page.click(page.button("Next Step"));
+  page.render();
+  assert.equal(page.field("Custom category").props.value, "  Custom research  ");
+  page.click(page.button("Save Draft"));
+  await page.settle();
+  assert.equal(page.calls.created[0].category, "Custom research");
+  assert.equal(page.field("Category").props.value, "existing:Custom research");
+  page.click(page.button("Back To Table"));
+  await page.settle();
+  assert.match(textContent(page.rows()[0]), /Custom research/);
+  page.click(page.rows()[0]);
+  await page.settle();
+  page.click(page.button("Next Step"));
+  page.render();
+  assert.equal(page.field("Category").props.value, "existing:Custom research");
+});
+
+test("imported unknown categories are prefilled as custom categories and preserved on save", async () => {
+  const page = await createPage({ status: "draft" });
+  chooseMarkdownFile(page, markdownFile("---\ntitle: An imported article\ncategory: Imported research\n---\nPreserved content"));
+  await page.settle();
+  page.click(page.button("Next Step"));
+  page.render();
+  assert.equal(page.field("Category").props.value, "custom");
+  assert.equal(page.field("Custom category").props.value, "Imported research");
+  page.click(page.button("Save Draft"));
+  await page.settle();
+  assert.equal(page.calls.created[0].category, "Imported research");
+  assert.equal(page.calls.created[0].content, "Preserved content");
+});
+
+test("typing an existing name in custom mode keeps the input available for the rest of the category", async () => {
+  const page = await createPage({ status: "draft" });
+  page.click(page.button(/^New draft$/i));
+  await page.settle();
+  page.fill(page.field("Title"), "A category with a shared prefix");
+  page.click(page.button("Next Step"));
+  page.render();
+  page.customCategory("Tech");
+  assert.equal(page.field("Category").props.value, "custom");
+  assert.equal(page.field("Custom category").props.value, "Tech");
+  page.fill(page.field("Custom category"), "Tech Guides");
+  page.click(page.button("Save Draft"));
+  await page.settle();
+  assert.equal(page.calls.created[0].category, "Tech Guides");
+});
+
+test("a category-options failure keeps custom editing usable and can be retried without losing text", async () => {
+  const page = await createPage({ status: "draft", categoryFailures: [new Error("Categories unavailable")] });
+  page.click(page.button(/^New draft$/i));
+  await page.settle();
+  page.fill(page.field("Title"), "Offline category options");
+  page.click(page.button("Next Step"));
+  page.render();
+  page.find((node) => node.props.role === "alert" && /Categories unavailable/.test(textContent(node)));
+  page.customCategory("Preserved custom value");
+  page.click(page.button("Retry categories"));
+  await page.settle();
+  assert.equal(page.calls.categoryLoads, 2);
+  assert.equal(page.field("Custom category").props.value, "Preserved custom value");
+  assert.equal(page.has((node) => node.props.role === "alert" && /Categories unavailable/.test(textContent(node))), false);
+  assert.ok(Array.from(walk(page.field("Category"))).some(({ node }) => node.type === "option" && node.props.value === "existing:Tech"));
+  page.click(page.button("Save Draft"));
+  await page.settle();
+  assert.equal(page.calls.created[0].category, "Preserved custom value");
+});
+
+function largeInventory(count = 521) {
+  return Array.from({ length: count }, (_, index) => ({ ...articles[0], id: index + 1,
+    title: `Archive article ${index + 1}`, slug: `archive-${index + 1}`,
+    category: index < 20 ? "First page" : "Archive" }));
+}
+
+test("large article collections load bounded pages with global category counts and page-scoped selection", async () => {
+  const page = await createPage({ initialArticles: largeInventory() });
+  assert.equal(page.rows().length, 20);
+  assert.equal(textContent(page.category("All Categories")), "All Categories521");
+  assert.equal(textContent(page.category("Archive")), "Archive501");
+  assert.deepEqual(page.calls.listParams.map(({ page, size }) => ({ page, size })), [{ page: 1, size: 20 }]);
+  page.change(page.checkbox("Select all articles on this page"));
+  page.click(page.bulkButton());
+  page.render();
+  assert.match(page.modal().message, /20 selected articles/);
+  page.cancel();
+  page.click(page.button("Next"));
+  await page.settle();
+  assert.equal(page.calls.listParams.at(-1).page, 2);
+  assert.equal(page.rows().length, 20);
+  assert.match(textContent(page.rows()[0]), /Archive article 21/);
+  assert.equal(page.checkbox("Select all articles on this page").props.checked, false);
+  assert.equal(page.bulkButton().props.disabled, true);
+  assert.equal(textContent(page.category("Archive")), "Archive501");
+});
+
+test("category and page-size changes query the full collection and reset the current page and selection", async () => {
+  const page = await createPage({ initialArticles: largeInventory(61) });
+  page.click(page.button("Next"));
+  await page.settle();
+  page.change(page.checkbox("Select Archive article 21"));
+  const sizeControl = page.find((node) => node.type === "select" && node.props.value === 20);
+  sizeControl.props.onChange({ target: { value: "50" } });
+  await page.settle();
+  assert.equal(page.calls.listParams.at(-1).page, 1);
+  assert.equal(page.calls.listParams.at(-1).size, 50);
+  assert.equal(page.rows().length, 50);
+  assert.equal(page.bulkButton().props.disabled, true);
+  page.click(page.button("Next"));
+  await page.settle();
+  page.click(page.category("First page"));
+  await page.settle();
+  assert.equal(page.calls.listParams.at(-1).page, 1);
+  assert.equal(page.calls.listParams.at(-1).category, "First page");
+  assert.equal(page.rows().length, 20);
+  assert.equal(textContent(page.category("All Categories")), "All Categories61");
+});
+
+test("page size is a maximum and fifteen drafts can be browsed in smaller pages", async () => {
+  const page = await createPage({ status: "draft", initialArticles: largeInventory(15).map((article) => ({ ...article, status: "draft" })) });
+  page.fill(page.field("Per page"), "50");
+  await page.settle();
+  assert.equal(page.calls.listParams.at(-1).size, 50);
+  assert.equal(page.rows().length, 15);
+  page.find((node) => node.type === "p" && textContent(node) === "All 15 articles fit on this page.");
+  assert.equal(page.button("Previous").props.disabled, true);
+  assert.equal(page.button("Next").props.disabled, true);
+  const requests = page.calls.listed;
+  page.click(page.button("Previous"));
+  page.click(page.button("Next"));
+  await page.settle();
+  assert.equal(page.calls.listed, requests);
+
+  page.fill(page.field("Per page"), "10");
+  await page.settle();
+  assert.equal(page.rows().length, 10);
+  assert.equal(page.has((node) => node.type === "p" && textContent(node) === "All 15 articles fit on this page."), false);
+  assert.equal(page.button("Previous").props.disabled, true);
+  assert.equal(page.button("Next").props.disabled, false);
+  page.click(page.button("Next"));
+  await page.settle();
+  assert.equal(page.calls.listParams.at(-1).page, 2);
+  assert.equal(page.rows().length, 5);
+  assert.match(textContent(page.rows()[0]), /Archive article 11/);
+  assert.equal(page.button("Previous").props.disabled, false);
+  assert.equal(page.button("Next").props.disabled, true);
+  page.click(page.button("Previous"));
+  await page.settle();
+  assert.equal(page.calls.listParams.at(-1).page, 1);
+  assert.equal(page.rows().length, 10);
+  assert.match(textContent(page.rows()[0]), /Archive article 1/);
+});
+
+test("debounced search finds articles outside loaded pages and clears selection before requesting", async () => {
+  const page = await createPage({ initialArticles: largeInventory() });
+  page.click(page.button("Next"));
+  await page.settle();
+  page.change(page.checkbox("Select Archive article 21"));
+  const beforeSearch = page.calls.listed;
+  page.fill(page.find((node) => node.props["aria-label"] === "Search published articles"), "Archive article 52");
+  page.fill(page.find((node) => node.props["aria-label"] === "Search published articles"), "Archive article 521");
+  assert.equal(page.calls.listed, beforeSearch);
+  assert.equal(page.bulkButton().props.disabled, true);
+  await page.flushSearch();
+  assert.equal(page.calls.listed, beforeSearch + 1);
+  assert.equal(page.calls.listParams.at(-1).page, 1);
+  assert.equal(page.calls.listParams.at(-1).search, "Archive article 521");
+  assert.equal(page.rows().length, 1);
+  assert.match(textContent(page.rows()[0]), /Archive article 521/);
+  assert.equal(textContent(page.category("All Categories")), "All Categories521");
+});
+
+test("deleting the final article on the last page returns to the last available page", async () => {
+  const page = await createPage({ initialArticles: largeInventory(21) });
+  page.click(page.button("Next"));
+  await page.settle();
+  page.click(page.deleteButton("Archive article 21"));
+  page.render();
+  page.confirm();
+  await page.settle();
+  assert.deepEqual(page.calls.single, [21]);
+  assert.deepEqual(page.calls.listParams.map(({ page }) => page), [1, 2, 2, 1]);
+  assert.equal(page.rows().length, 20);
+  assert.equal(textContent(page.category("All Categories")), "All Categories20");
+  assert.equal(page.button("Next").props.disabled, true);
+});
+
+test("article deep links load details independently of the current list page", async () => {
+  const page = await createPage({ initialArticles: largeInventory(), search: "?article=521" });
+  assert.deepEqual(page.calls.edited, [521]);
+  page.find((node) => node.type === "input" && node.props.value === "Archive article 521");
+  page.click(page.button("Back To Table"));
+  await page.settle();
+  assert.equal(page.rows().length, 20);
+  assert.doesNotMatch(textContent(page.table()), /Archive article 521/);
+  assert.equal(page.calls.listParams.at(-1).page, 1);
+});
+
 test("saving a published article as draft removes its row and resets its emptied category", async () => {
   const page = await createPage();
   page.click(page.category("Culture"));
-  page.render();
+  await page.settle();
   page.click(page.rows()[0]);
   await page.settle();
   // Empty content keeps this status transition test independent of DOM parsing.
@@ -499,7 +841,7 @@ test("publishing a draft opened by its article deep link reloads the published t
   assert.equal(textContent(page.category("All Categories")), "All Categories4");
   assert.equal(textContent(page.category("Draft Only")), "Draft Only1");
   page.click(page.category("Draft Only"));
-  page.render();
+  await page.settle();
   assert.equal(page.rows().length, 1);
   assert.match(textContent(page.rows()[0]), /Draft Delta/);
 });
@@ -644,7 +986,7 @@ test("an empty Drafts page can create its first manual draft with rich text pres
   editor.props.onInput();
   page.click(page.button("Next Step"));
   page.render();
-  page.fill(page.field("Category"), "Handwritten");
+  page.customCategory("Handwritten");
   page.click(page.button("Previous Step"));
   page.render();
   assert.equal(page.find((node) => node.props["aria-label"] === "Article content").props.ref.current.innerHTML, html);
@@ -665,8 +1007,9 @@ test("an empty Drafts page can create its first manual draft with rich text pres
 test("a manually saved draft preserves Markdown and metadata, appears in the table, and reopens for updates", async () => {
   const page = await createPage({ status: "draft" });
   page.click(page.category("Draft Only"));
-  page.render();
+  await page.settle();
   page.fill(page.find((node) => node.props["aria-label"] === "Search drafted articles"), "Delta");
+  await page.flushSearch();
   page.click(page.button(/^New draft$/i));
   await page.settle();
   page.fill(page.field("Title"), "  Manual story  ");
@@ -678,7 +1021,7 @@ test("a manually saved draft preserves Markdown and metadata, appears in the tab
   page.click(page.button("Next Step"));
   page.render();
   page.fill(page.field("Slug"), "manual-story-custom");
-  page.fill(page.field("Category"), "  Handwritten  ");
+  page.customCategory("  Handwritten  ");
   page.fill(page.field("SEO Title"), "Manual story SEO");
   page.fill(page.field("Tags (comma separated)"), "manual, editing");
   page.fill(page.field("Keywords (comma separated)"), "story, draft");
@@ -734,14 +1077,14 @@ test("failed manual draft creation retains entered content and metadata for retr
   page.fill(page.find((node) => node.props["aria-label"] === "Article Markdown"), "Preserved draft body");
   page.click(page.button("Next Step"));
   page.render();
-  page.fill(page.field("Category"), "Original category");
+  page.customCategory("Original category");
   page.fill(page.field("Slug"), "already-exists");
   page.click(page.button("Save Draft"));
   await page.settle();
   assert.equal(page.toast().type, "error");
   assert.equal(page.toast().message, "A draft with this slug already exists.");
   assert.equal(page.field("Slug").props.value, "already-exists");
-  assert.equal(page.field("Category").props.value, "Original category");
+  assert.equal(page.field("Custom category").props.value, "Original category");
   page.fill(page.field("Slug"), "retry-draft-unique");
   page.click(page.button("Previous Step"));
   page.render();
@@ -844,7 +1187,7 @@ test("Markdown front matter fills editable metadata and saves only its body as a
   assert.equal(page.field("Reading Time (minutes)").props.value, "17");
   assert.equal(page.field("Tags (comma separated)").props.value, '"data, science", analysis');
   assert.equal(page.field("Keywords (comma separated)").props.value, '"a ""quoted"" phrase", "file, import"');
-  page.fill(page.field("Category"), "Reviewed category");
+  page.customCategory("Reviewed category");
   assert.deepEqual(page.calls.created, []);
   page.click(page.button("Save Draft"));
   await page.settle();
@@ -915,7 +1258,7 @@ test("reopening an imported draft preserves full Markdown during a metadata-only
   assert.equal(page.find((node) => node.props["aria-label"] === "Article Markdown").props.value, body);
   page.click(page.button("Next Step"));
   page.render();
-  page.fill(page.field("Category"), "Reviewed category");
+  page.customCategory("Reviewed category");
   page.click(page.button("Save Changes"));
   await page.settle();
   assert.equal(page.calls.created.length, 1);
@@ -1037,7 +1380,7 @@ test("saving an edited draft keeps it in the Drafts table", async () => {
 test("publishing from Drafts removes the draft, its selection, and its emptied category without leaving Drafts", async () => {
   const page = await createPage({ status: "draft" });
   page.click(page.category("Draft Only"));
-  page.render();
+  await page.settle();
   page.change(page.checkbox("Select Draft Delta"));
   page.click(page.rows()[0]);
   await page.settle();
@@ -1089,17 +1432,17 @@ test("Draft search limits visible selection and refresh keeps the draft filter",
   let sidebarRefreshes = 0;
   const page = await createPage({ status: "draft", initialArticles: draftInventory, onRefresh: () => { sidebarRefreshes += 1; } });
   page.find((node) => node.props["aria-label"] === "Search drafted articles").props.onChange({ target: { value: "draft-echo" } });
-  page.render();
+  await page.flushSearch();
   assert.equal(page.rows().length, 1);
   assert.match(textContent(page.rows()[0]), /Draft Echo/);
-  page.change(page.checkbox("Select all articles in this category"));
+  page.change(page.checkbox("Select all articles on this page"));
   page.click(page.bulkButton());
   page.render();
   assert.match(page.modal().message, /Draft Echo/);
   page.cancel();
   page.click(page.find((node) => node.type === "button" && textContent(node) === "Refresh"));
   await page.settle();
-  assert.deepEqual(page.calls.listStatuses, ["draft", "draft"]);
+  assert.deepEqual(page.calls.listStatuses, ["draft", "draft", "draft"]);
   assert.equal(sidebarRefreshes, 1);
   assert.equal(page.rows().length, 1);
   assert.match(textContent(page.rows()[0]), /Draft Echo/);
@@ -1125,8 +1468,8 @@ test("Draft row deletion uses the single endpoint and preserves other draft sele
 test("Draft bulk deletion targets only the visible draft category and resets its emptied category", async () => {
   const page = await createPage({ status: "draft", initialArticles: draftInventory });
   page.click(page.category("Draft Only"));
-  page.render();
-  page.change(page.checkbox("Select all articles in this category"));
+  await page.settle();
+  page.change(page.checkbox("Select all articles on this page"));
   page.click(page.bulkButton());
   page.render();
   assert.match(page.modal().message, /2 selected articles/);
@@ -1170,7 +1513,7 @@ test("article detail failures show a persistent error with retry and back contro
 
 test("selection supports partial, all, none, and clears when category changes", async () => {
   const page = await createPage();
-  const all = () => page.checkbox("Select all articles in this category");
+  const all = () => page.checkbox("Select all articles on this page");
   assert.equal(page.bulkButton().props.disabled, true);
   page.change(page.checkbox("Select Alpha"));
   assert.equal(all().props.checked, false);
@@ -1186,13 +1529,13 @@ test("selection supports partial, all, none, and clears when category changes", 
 
   page.change(page.checkbox("Select Alpha"));
   page.click(page.category("Culture"));
-  page.render();
+  await page.settle();
   assert.equal(page.rows().length, 1);
   assert.equal(page.bulkButton().props.disabled, true);
   page.change(all());
   assert.equal(page.checkbox("Select Gamma").props.checked, true);
   page.click(page.category("All Categories"));
-  page.render();
+  await page.settle();
   assert.equal(page.rows().length, 3);
   assert.equal(page.checkbox("Select Alpha").props.checked, false);
   assert.equal(page.checkbox("Select Gamma").props.checked, false);
@@ -1244,8 +1587,8 @@ test("row delete uses the single endpoint, removes its article, and preserves ot
 test("bulk delete targets the visible category and resets a category emptied by deletion", async () => {
   const page = await createPage();
   page.click(page.category("Tech"));
-  page.render();
-  page.change(page.checkbox("Select all articles in this category"));
+  await page.settle();
+  page.change(page.checkbox("Select all articles on this page"));
   page.click(page.bulkButton());
   page.render();
   assert.equal(page.modal().open, true);
@@ -1338,7 +1681,7 @@ test("pending deletion disables controls and prevents repeated requests before a
 
 test("a failed bulk deletion keeps the shared modal open with an error and retries its selected articles", async () => {
   const page = await createPage({ deleteFailures: [new Error("Deletion unavailable")] });
-  page.change(page.checkbox("Select all articles in this category"));
+  page.change(page.checkbox("Select all articles on this page"));
   page.click(page.bulkButton());
   page.render();
   page.confirm();
