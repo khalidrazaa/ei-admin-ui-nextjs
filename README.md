@@ -43,6 +43,18 @@ Topics → brief → Begin research → Generate article → review versions/QA 
 
 To write an article manually, open **Drafts -> New draft**, enter its title and content, and use **Next Step** to edit metadata. The slug follows the title until you edit it. **Save Draft** creates an unpublished article and keeps its editor open in Drafts; publishing is available after the draft is saved. An unfinished draft may have empty content.
 
+The Drafts list sidebar contains category filters. Open **Topics** to manage research and generated versions/QA.
+
+Articles and Drafts show a **Category** column in the table and category labels on mobile cards. In the editor's metadata step, choose an existing category or **Custom category…** to enter a new name. Existing options come from all drafts and published articles, independently of pagination and filters. **Uncategorized** clears the category. Imported or previously saved custom names remain editable, and a category-list loading failure still allows custom entry and retry.
+
+Articles and Drafts load 20 articles per page by default. Use Previous/Next or Per page to browse larger collections. Category filters and search run on the backend across every matching article; category totals cover the full status list. Selecting all selects only the current page, and changing the page, category, search, or page size clears the selection. Saving or deleting refreshes the list and its totals, including returning to the last available page after deletion.
+
+Per page is the maximum number of matching articles to display. For example, 15 matches with 50 per page show all 15 on page 1 of 1, with Previous/Next disabled; choose 10 per page to browse those articles over two pages. Scrolling is needed only when the displayed rows exceed the available height.
+
+The list uses `GET /v1/admin/articles?page=1&size=20&status=published` (or `status=draft`), with optional `category` and `search`. It requires the backend's paginated response with `items`, pagination fields, `categories`, and `category_total`; deploy the backend pagination support before this frontend.
+
+Editor category options use the protected `GET /v1/admin/articles/categories` endpoint, which returns category names without loading article bodies. Deploy that backend endpoint before this frontend update.
+
 ### Import a Markdown draft
 
 Use **Upload Markdown** in **Drafts** or **New draft** to load a local `.md` or `.markdown` file. Files must use UTF-8 and be at most 2 MiB. Download the [complete draft template](public/examples/draft-template.md), also available from **Download template** in the importer.

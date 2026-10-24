@@ -10,12 +10,15 @@ import Button from "@/components/ui/Button";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import Table, { type TableColumn } from "@/components/ui/Table";
 import Toast from "@/components/ui/Toast";
+import { VideoPaginationControls } from "@/components/ui/VideoFilters";
 import {
   createDraft,
   deleteArticle,
   deleteArticles,
   getArticle,
-  getArticles,
+  getArticleCategories,
+  getArticlePage,
+  type ArticlePage,
   updateArticle,
 } from "@/lib/services/articles";
 import { getHostSites } from "@/lib/services/host-sites";
@@ -353,10 +356,19 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
   const [sourceMode, setSourceMode] = useState(false);
   const [markdownSource, setMarkdownSource] = useState("");
   const [articles, setArticles] = useState<Article[]>([]);
+  const [articlePage, setArticlePage] = useState<ArticlePage | null>(null);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const [loadingList, setLoadingList] = useState(true);
   const [listReloadVersion, setListReloadVersion] = useState(0);
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [categoryOptions, setCategoryOptions] = useState<string[]>([]);
+  const [loadingCategories, setLoadingCategories] = useState(true);
+  const [categoryOptionsError, setCategoryOptionsError] = useState<string | null>(null);
+  const [categoryOptionsReloadVersion, setCategoryOptionsReloadVersion] = useState(0);
+  const [customCategoryMode, setCustomCategoryMode] = useState(false);
   const [selectedArticleIds, setSelectedArticleIds] = useState<Set<number>>(new Set());
   const [deleting, setDeleting] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{
@@ -392,20 +404,45 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
   const slugEditedRef = useRef(false);
   const markdownFileInputRef = useRef<HTMLInputElement | null>(null);
   const importingRef = useRef(false);
-  const deletionControlsDisabled = deleting || deleteTarget !== null || importing;
+  const deletionControlsDisabled = deleting || deleteTarget !== null || importing || loadingList || search.trim() !== debouncedSearch;
   const editorControlsDisabled = saving || importing;
 
-  const categoryStats = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const article of articles) {
-      const category = article.category?.trim() || "Uncategorized";
-      counts.set(category, (counts.get(category) ?? 0) + 1);
-    }
+  const categoryStats = articlePage?.categories ?? [];
+  const resolvedCategoryOptions = useMemo(() =>
+    Array.from(new Set([
+      ...categoryOptions,
+      ...categoryStats.filter((category) => category.name !== "Uncategorized").map((category) => category.name),
+    ].map((category) => category.trim()).filter(Boolean))).sort((left, right) => left.localeCompare(right)),
+  [categoryOptions, categoryStats]);
+  const isCustomCategory = customCategoryMode ||
+    (Boolean(editorForm.category.trim()) && !resolvedCategoryOptions.includes(editorForm.category.trim()));
 
-    return Array.from(counts.entries())
-      .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [articles]);
+  useEffect(() => {
+    let cancelled = false;
+    async function loadCategories() {
+      setLoadingCategories(true);
+      setCategoryOptionsError(null);
+      try {
+        const categories = await getArticleCategories();
+        if (!cancelled) setCategoryOptions(categories);
+      } catch (error) {
+        if (!cancelled) setCategoryOptionsError(error instanceof Error ? error.message : "Unable to load categories.");
+      } finally {
+        if (!cancelled) setLoadingCategories(false);
+      }
+    }
+    void loadCategories();
+    return () => { cancelled = true; };
+  }, [listReloadVersion, categoryOptionsReloadVersion]);
+
+  useEffect(() => {
+    if (search.trim() === debouncedSearch) return;
+    const timeout = window.setTimeout(() => {
+      setDebouncedSearch(search.trim());
+      setPage(1);
+    }, 300);
+    return () => window.clearTimeout(timeout);
+  }, [search, debouncedSearch]);
 
   useEffect(() => {
     if (
@@ -414,17 +451,12 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
       !categoryStats.some((item) => item.name === selectedCategory)
     ) {
       setSelectedCategory("all");
+      setPage(1);
       setSelectedArticleIds(new Set());
     }
   }, [categoryStats, selectedCategory, loadingList]);
 
-  const filteredArticles = useMemo(() => {
-    return articles.filter(
-      (article) =>
-        (selectedCategory === "all" || (article.category?.trim() || "Uncategorized") === selectedCategory) &&
-        `${article.title} ${article.slug} ${article.category || ""}`.toLowerCase().includes(search.toLowerCase())
-    );
-  }, [articles, selectedCategory, search]);
+  const filteredArticles = articles;
 
   const selectedVisibleIds = filteredArticles
     .filter((article) => selectedArticleIds.has(article.id))
@@ -451,9 +483,17 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
       try {
         setLoadingList(true);
         setError(null);
-        const data = await getArticles(status);
+        const data = await getArticlePage({ status, page, size: pageSize,
+          category: selectedCategory === "all" ? undefined : selectedCategory,
+          search: debouncedSearch });
         if (cancelled) return;
-        setArticles(data.filter((article) => article.status === status));
+        setArticlePage(data);
+        if (page > Math.max(1, data.total_pages)) {
+          setPage(Math.max(1, data.total_pages));
+          setSelectedArticleIds(new Set());
+          return;
+        }
+        setArticles(data.items.filter((article) => article.status === status));
         setError(null);
         if (!initialSelectionRead.current) {
           initialSelectionRead.current = true;
@@ -471,7 +511,7 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
 
     void loadArticles();
     return () => { cancelled = true; };
-  }, [listReloadVersion, status]);
+  }, [listReloadVersion, status, page, pageSize, selectedCategory, debouncedSearch]);
 
   useEffect(() => {
     async function loadHostSites() {
@@ -619,6 +659,7 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
     setImportError(null);
     setImportFeedback(null);
     setNewDraft(false);
+    setCustomCategoryMode(false);
     setSelectedArticleId(articleId);
     setEditorStep(1);
   }
@@ -628,6 +669,7 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
     setSelectedArticleId(null);
     setSelectedArticle(null);
     setNewDraft(true);
+    setCustomCategoryMode(false);
     setEditorForm({ ...EMPTY_FORM });
     setEditorStep(1);
     setArticleLoadError(null);
@@ -648,6 +690,7 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
     setImportError(null);
     setImportFeedback(null);
     setNewDraft(false);
+    setCustomCategoryMode(false);
     setSelectedArticleId(null);
     setEditorStep(1);
   }
@@ -671,6 +714,7 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
       }
       const { payload, warnings } = parseMarkdownDraft(source, file.name);
       setNewDraft(true);
+      setCustomCategoryMode(false);
       setEditorForm(toEditorForm(payload));
       setEditorStep(1);
       setArticleLoadError(null);
@@ -693,6 +737,7 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
   function selectCategory(category: string) {
     if (importingRef.current || deletionInProgressRef.current || deleteTarget) return;
     setSelectedCategory(category);
+    setPage(1);
     setSelectedArticleIds(new Set());
   }
 
@@ -716,7 +761,8 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
   function requestDelete(articleIds: number[]) {
     if (importingRef.current || deletionInProgressRef.current || deleteTarget || articleIds.length === 0) return;
 
-    const article = articles.find((item) => item.id === articleIds[0]);
+    const article = articles.find((item) => item.id === articleIds[0]) ??
+      (selectedArticle?.id === articleIds[0] ? selectedArticle : null);
     const target = articleIds.length === 1
       ? `"${article?.title ?? "this article"}"`
       : `${articleIds.length} selected articles`;
@@ -752,6 +798,7 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
       setMessage(`${result.deleted_count} article${result.deleted_count === 1 ? "" : "s"} deleted successfully.`);
       setMessageType("success");
       setDeleteTarget(null);
+      setListReloadVersion((version) => version + 1);
     } catch (err) {
       console.error("Failed to delete articles", err);
       const failureMessage = err instanceof Error ? err.message : "Failed to delete articles.";
@@ -808,13 +855,18 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
 
       setSelectedArticle(updated);
       setEditorForm(toEditorForm(updated));
+      setCustomCategoryMode(false);
+      const savedCategory = updated.category?.trim();
+      if (savedCategory) setCategoryOptions((current) => Array.from(new Set([...current, savedCategory])));
       if (newDraft) {
         createdArticleIdRef.current = updated.id;
         setSelectedArticleId(updated.id);
         setNewDraft(false);
-        setArticles((current) => [updated, ...current.filter((article) => article.id !== updated.id)]);
         setSelectedCategory("all");
         setSearch("");
+        setDebouncedSearch("");
+        setPage(1);
+        setListReloadVersion((version) => version + 1);
         setSelectedArticleIds(new Set());
         setMessage("Draft created successfully.");
         setMessageType("success");
@@ -831,9 +883,8 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
           next.delete(updated.id);
           return next;
         });
-      } else if (!articles.some((article) => article.id === updated.id)) {
-        setListReloadVersion((current) => current + 1);
       }
+      setListReloadVersion((current) => current + 1);
       setMessage("Article updated successfully.");
       setMessageType("success");
     } catch (err) {
@@ -853,7 +904,7 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
         <input
           ref={selectAllRef}
           type="checkbox"
-          aria-label="Select all articles in this category"
+          aria-label="Select all articles on this page"
           checked={allArticlesSelected}
           onChange={toggleAllArticles}
           disabled={deletionControlsDisabled}
@@ -880,6 +931,12 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
       accessor: "title",
       headerClassName: "!font-bold",
       className: "text-gray-900",
+    },
+    {
+      id: "category",
+      header: "Category",
+      render: (article) => article.category?.trim() || "Uncategorized",
+      className: "text-gray-700",
     },
     {
       id: "status",
@@ -961,7 +1018,7 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
                   }`}
                 >
                   <span>All Categories</span>
-                  <span className="text-xs">{articles.length}</span>
+                  <span className="text-xs">{articlePage?.category_total ?? 0}</span>
                 </button>
 
                 {categoryStats.map((item) => (
@@ -989,7 +1046,7 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
       >
         {importError && <div role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{importError}</div>}
         {importing && <p role="status" className="mb-4 text-sm text-gray-500">Reading Markdown file...</p>}
-        {loadingList ? (
+        {loadingList && !articlePage ? (
           <div className="rounded-xl border border-gray-200 bg-white p-6 text-sm text-gray-500 shadow-sm">
             {isDraft ? "Loading drafted articles..." : "Loading articles..."}
           </div>
@@ -1005,18 +1062,18 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
             </button>
           </div>
         ) : selectedArticleId === null && !newDraft ? (
-          <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
+          <div aria-busy={loadingList} className="rounded-xl border border-gray-200 bg-white shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
-              <div>
-                <p className="text-xs text-gray-500">
-                  {selectedCategory === "all" ? "All Categories" : selectedCategory} |{" "}
-                  {filteredArticles.length} article
-                  {filteredArticles.length === 1 ? "" : "s"}
-                </p>
-              </div>
               <div className="flex flex-wrap items-center gap-3">
                 {isDraft && <Button type="button" onClick={startNewDraft} disabled={deletionControlsDisabled}>New draft</Button>}
                 {isDraft && markdownUploadControls}
+                <p className="text-xs text-gray-500">
+                  {selectedCategory === "all" ? "All Categories" : selectedCategory} |{" "}
+                  {articlePage?.total ?? 0} article
+                  {articlePage?.total === 1 ? "" : "s"}
+                </p>
+              </div>
+              <div className="ml-auto flex flex-wrap items-center gap-3">
                 {isDraft && <Button
                   type="button"
                   onClick={() => {
@@ -1038,9 +1095,10 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
               </div>
             </div>
 
-            {isDraft && <div className="border-b border-gray-200 p-4">
+            <div className="border-b border-gray-200 p-4">
               <input
-                aria-label="Search drafted articles"
+                aria-label={isDraft ? "Search drafted articles" : "Search published articles"}
+                disabled={deleting || deleteTarget !== null || importing}
                 placeholder="Search title, slug or category"
                 className="w-full rounded border border-gray-300 px-3 py-2 text-sm"
                 value={search}
@@ -1049,11 +1107,12 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
                   setSelectedArticleIds(new Set());
                 }}
               />
-            </div>}
+            </div>
+            {loadingList && <p role="status" className="px-4 py-2 text-sm text-gray-500">Loading articles...</p>}
 
             {filteredArticles.length === 0 ? (
               <div className="p-8 text-sm text-gray-500">{isDraft
-                ? search ? "No matching drafted articles." : articles.length === 0
+                ? search ? "No matching drafted articles." : articlePage?.category_total === 0
                   ? "No saved drafts yet. Choose New draft, upload Markdown, or generate an article from Topics."
                   : "No drafted articles for this category."
                 : "No published articles for this category."}</div>
@@ -1081,6 +1140,7 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
                         <div className="text-xs text-gray-500">{article.slug}</div>
                         <div className="text-sm text-gray-700">{getPreviewText(article)}</div>
                         <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500">
+                          <span>{article.category?.trim() || "Uncategorized"}</span>
                           <span className="capitalize">{article.status}</span>
                           <span>{formatDate(article.created_at)}</span>
                           <span>{article.host_site}</span>
@@ -1113,6 +1173,18 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
               />
               </>
             )}
+            {articlePage && <div className="px-4">
+              <VideoPaginationControls
+                itemLabel="articles"
+                pagination={{ page: articlePage.page, size: articlePage.size, total: articlePage.total,
+                  pages: Math.max(1, articlePage.total_pages), has_next: articlePage.has_next,
+                  has_prev: articlePage.has_previous }}
+                pageSize={pageSize}
+                disabled={deletionControlsDisabled}
+                onPageChange={(nextPage) => { setPage(nextPage); setSelectedArticleIds(new Set()); }}
+                onPageSizeChange={(size) => { setPageSize(size); setPage(1); setSelectedArticleIds(new Set()); }}
+              />
+            </div>}
           </div>
         ) : articleLoadError ? (
           <div role="alert" className="space-y-3 rounded-xl border border-red-200 bg-red-50 p-6 text-sm text-red-700 shadow-sm">
@@ -1370,16 +1442,47 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
                     </select>
                   </label>
 
-                  <label className="space-y-1">
-                    <span className="text-xs font-medium uppercase tracking-wide text-gray-500">
-                      Category
-                    </span>
-                    <input
-                      value={editorForm.category}
-                      onChange={(event) => updateFormField("category", event.target.value)}
-                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500"
-                    />
-                  </label>
+                  <div className="space-y-2">
+                    <label className="block space-y-1">
+                      <span className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                        Category
+                      </span>
+                      <select
+                        value={isCustomCategory ? "custom" : editorForm.category.trim() ? `existing:${editorForm.category.trim()}` : "none"}
+                        onChange={(event) => {
+                          if (savingRef.current || importingRef.current) return;
+                          const value = event.target.value;
+                          setCustomCategoryMode(value === "custom");
+                          updateFormField("category", value.startsWith("existing:") ? value.slice("existing:".length) : "");
+                        }}
+                        className="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500"
+                      >
+                        <option value="none">Uncategorized</option>
+                        {resolvedCategoryOptions.map((category) => (
+                          <option key={category} value={`existing:${category}`}>{category}</option>
+                        ))}
+                        <option value="custom">Custom category…</option>
+                      </select>
+                    </label>
+                    {isCustomCategory && <label className="block space-y-1">
+                      <span className="text-xs font-medium uppercase tracking-wide text-gray-500">Custom category</span>
+                      <input
+                        value={editorForm.category}
+                        onChange={(event) => {
+                          if (savingRef.current || importingRef.current) return;
+                          setCustomCategoryMode(true);
+                          updateFormField("category", event.target.value);
+                        }}
+                        placeholder="Enter a category"
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 outline-none focus:border-blue-500"
+                      />
+                    </label>}
+                    {loadingCategories && <p role="status" className="text-xs text-gray-500">Loading categories…</p>}
+                    {categoryOptionsError && <div className="space-y-1 text-xs text-amber-800">
+                      <p role="alert">{categoryOptionsError} You can still enter a custom category.</p>
+                      <button type="button" onClick={() => setCategoryOptionsReloadVersion((version) => version + 1)} className="underline">Retry categories</button>
+                    </div>}
+                  </div>
 
                   <label className="space-y-1">
                     <span className="text-xs font-medium uppercase tracking-wide text-gray-500">

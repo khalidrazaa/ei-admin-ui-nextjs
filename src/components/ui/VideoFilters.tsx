@@ -265,11 +265,16 @@ export function VideoPaginationControls({
   return (
     <div className="sticky bottom-0 z-20 -mx-4 mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 bg-gray-50 px-4 py-3">
       <div className="flex flex-wrap items-center gap-3 text-sm text-gray-500">
-        <p>
-          Showing <span className="font-medium text-gray-700">{firstItem}</span> to{" "}
-          <span className="font-medium text-gray-700">{lastItem}</span> of{" "}
-          <span className="font-medium text-gray-700">{pagination.total}</span> {itemLabel}
-        </p>
+        <div>
+          <p>
+            Showing <span className="font-medium text-gray-700">{firstItem}</span> to{" "}
+            <span className="font-medium text-gray-700">{lastItem}</span> of{" "}
+            <span className="font-medium text-gray-700">{pagination.total}</span> {itemLabel}
+          </p>
+          {pagination.total <= pagination.size && (
+            <p className="mt-1 text-xs">All {pagination.total} {itemLabel} fit on this page.</p>
+          )}
+        </div>
 
         {onPageSizeChange ? (
           <label className="flex items-center gap-2 whitespace-nowrap">
@@ -292,7 +297,7 @@ export function VideoPaginationControls({
         <Button
           type="button"
           variant="secondary"
-          className="!w-auto shrink-0 whitespace-nowrap text-sm"
+          className="!w-auto shrink-0 whitespace-nowrap text-sm disabled:cursor-not-allowed disabled:opacity-50"
           disabled={disabled || !pagination.has_prev}
           onClick={() => onPageChange(Math.max(1, pagination.page - 1))}
         >
@@ -304,7 +309,7 @@ export function VideoPaginationControls({
         </span>
         <Button
           type="button"
-          className="!w-auto shrink-0 whitespace-nowrap text-sm"
+          className="!w-auto shrink-0 whitespace-nowrap text-sm disabled:cursor-not-allowed disabled:opacity-50"
           disabled={disabled || !pagination.has_next}
           onClick={() => onPageChange(Math.min(pagination.pages, pagination.page + 1))}
         >

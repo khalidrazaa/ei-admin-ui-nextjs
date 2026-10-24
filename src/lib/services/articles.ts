@@ -6,6 +6,38 @@ export type ArticleDeleteResult = {
   deleted_count: number;
 };
 
+export type ArticleListParams = {
+  status?: "draft" | "published";
+  page?: number;
+  size?: number;
+  category?: string;
+  search?: string;
+};
+
+export type ArticlePage = {
+  items: Article[];
+  total: number;
+  page: number;
+  size: number;
+  total_pages: number;
+  has_next: boolean;
+  has_previous: boolean;
+  categories: Array<{ name: string; count: number }>;
+  category_total: number;
+};
+
+export async function getArticlePage(params: ArticleListParams = {}): Promise<ArticlePage> {
+  const query = new URLSearchParams({ page: String(params.page ?? 1), size: String(params.size ?? 20) });
+  if (params.status) query.set("status", params.status);
+  if (params.category) query.set("category", params.category);
+  if (params.search?.trim()) query.set("search", params.search.trim());
+  return apiFetch<ArticlePage>(`/admin/articles?${query}`, { method: "GET" });
+}
+
+export async function getArticleCategories(): Promise<string[]> {
+  return apiFetch<string[]>("/admin/articles/categories", { method: "GET" });
+}
+
 type DraftCreatePayload = Pick<Article, "title" | "slug"> &
   Partial<Omit<Article, "id" | "created_at" | "updated_at" | "published_at" | "drafted_at" | "status" | "content">> & {
     content: string;
