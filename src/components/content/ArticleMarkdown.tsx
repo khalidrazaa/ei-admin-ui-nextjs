@@ -1,17 +1,19 @@
 import React from "react";
 
+import ArticleImage from "@/components/content/ArticleImage";
+import { collectMarkdownImageDefinitions, markdownTableCells, parseMarkdownImageAt, type MarkdownImageDefinition } from "@/lib/utils/markdownImages";
+
 export function safeHref(value: string): string | undefined {
   if (/^https?:\/\//i.test(value) || /^\/(?!\/)/.test(value) || /^#[\w-]+$/.test(value)) return value;
   return undefined;
 }
 
-function inline(text: string): React.ReactNode[] {
-  return text.split(/(!?\[[^\]]*\]\([^)]+\)|\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g).map((part, i) => {
+function inlineText(text: string): React.ReactNode[] {
+  return text.split(/(\[[^\]]*\]\([^)]+\)|\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g).map((part, i) => {
     const link = part.match(/^(!?)\[([^\]]*)\]\(([^)]+)\)$/);
     if (link) {
       const href = safeHref(link[3]);
       if (!href) return <span key={i}>{link[2]}</span>;
-      if (link[1]) return <a key={i} href={href} target="_blank" rel="noopener noreferrer">{link[2] || "View image"}</a>;
       return <a key={i} href={href} rel="noopener noreferrer" className="text-blue-700 underline">{link[2]}</a>;
     }
     if (part.startsWith("**")) return <strong key={i}>{part.slice(2,-2)}</strong>;
@@ -19,6 +21,29 @@ function inline(text: string): React.ReactNode[] {
     if (part.startsWith("*")) return <em key={i}>{part.slice(1,-1)}</em>;
     return part;
   });
+}
+
+function imageInline(text: string, definitions: ReadonlyMap<string, MarkdownImageDefinition>, resolveImage?: (destination: string) => string | undefined): React.ReactNode[] {
+  const nodes: React.ReactNode[] = [];
+  let start = 0;
+  for (let index = 0; index < text.length;) {
+    if (text[index] === "\\") { index += 2; continue; }
+    if (text[index] === "`") {
+      const run = text.slice(index).match(/^`+/)![0];
+      const end = text.indexOf(run, index + run.length);
+      index = end < 0 ? index + run.length : end + run.length;
+      continue;
+    }
+    const image = parseMarkdownImageAt(text, index, definitions);
+    if (!image) { index += 1; continue; }
+    if (index > start) nodes.push(<React.Fragment key={`text-${start}`}>{inlineText(text.slice(start, index))}</React.Fragment>);
+    const preview = resolveImage?.(image.destination);
+    nodes.push(<ArticleImage key={`image-${index}`} src={preview || image.destination} alt={image.alt} title={image.title} preview={Boolean(preview)} />);
+    index = image.end;
+    start = index;
+  }
+  if (start < text.length) nodes.push(<React.Fragment key={`text-${start}`}>{inlineText(text.slice(start))}</React.Fragment>);
+  return nodes;
 }
 
 type Edge = { from: string; to: string; label: string };
@@ -65,18 +90,28 @@ function Flow({ source }: { source: string }) {
   </figure>;
 }
 
-export default function ArticleMarkdown({ content }: { content: string }) {
-  const lines = content.replace(/\r\n/g,"\n").split("\n"), blocks: React.ReactNode[] = [];
+export default function ArticleMarkdown({ content, resolveImage }: { content: string; resolveImage?: (destination: string) => string | undefined }) {
+  const parsed = collectMarkdownImageDefinitions(content.replace(/\r\n/g,"\n"));
+  const lines = parsed.content.split("\n"), blocks: React.ReactNode[] = [];
+  const inline = (text: string) => imageInline(text, parsed.definitions, resolveImage);
   let i = 0;
-  const cells = (s: string) => s.trim().replace(/^\||\|$/g,"").split("|").map(x=>x.trim());
+  const cells = markdownTableCells;
   while (i < lines.length) {
     const line = lines[i].trim(), key = i;
     if (!line) { i++; continue; }
-    if (line.startsWith("```")) {
-      const lang = line.slice(3).trim(); const code: string[] = []; i++;
-      while (i < lines.length && !lines[i].trim().startsWith("```")) code.push(lines[i++]);
+    const fence = line.match(/^(`{3,}|~{3,})(.*)$/);
+    if (fence) {
+      const lang = fence[2].trim(); const code: string[] = []; i++;
+      const closing = new RegExp(`^${fence[1][0]}{${fence[1].length},}\\s*$`);
+      while (i < lines.length && !closing.test(lines[i].trim())) code.push(lines[i++]);
       i++;
       blocks.push(lang === "mermaid" ? <Flow key={key} source={code.join("\n")} /> : <pre key={key} className="my-4 overflow-x-auto rounded bg-gray-100 p-4"><code>{code.join("\n")}</code></pre>); continue;
+    }
+    const image = parseMarkdownImageAt(line, 0, parsed.definitions);
+    if (image && image.end === line.length) {
+      const preview = resolveImage?.(image.destination);
+      blocks.push(<ArticleImage key={key} src={preview || image.destination} alt={image.alt} title={image.title} standalone preview={Boolean(preview)} />);
+      i++; continue;
     }
     if (line.includes("|") && i+1 < lines.length && /^\|?\s*:?-{3,}/.test(lines[i+1].trim())) {
       const headings = cells(line); i+=2; const rows: string[][] = [];
@@ -95,6 +130,8 @@ export default function ArticleMarkdown({ content }: { content: string }) {
     if (line.startsWith("> ")) { blocks.push(<blockquote key={key} className="border-l-4 pl-4">{inline(line.slice(2))}</blockquote>); i++; continue; }
     const paragraph = [line]; i++;
     while (i<lines.length && lines[i].trim() && !/^(#|```|>|[-*] |\d+\. )/.test(lines[i].trim())) {
+      const nextImage = parseMarkdownImageAt(lines[i].trim(), 0, parsed.definitions);
+      if (nextImage && nextImage.end === lines[i].trim().length) break;
       if (lines[i].includes('|') && /^\|?\s*:?-{3,}/.test(lines[i+1]?.trim() || '')) break;
       paragraph.push(lines[i++].trim());
     }

@@ -38,6 +38,8 @@ Imagine a small online store selling notebooks. A customer buys two notebooks an
 
 ## Decide who handles exceptions
 
+To add a diagram, select its SVG or PNG file together with this Markdown file in **Upload article files**, then use **Insert image** or add a reference such as `![Order processing flow](order-flow.svg)` outside a code span. The filename should match the selected diagram. Review the preview before saving.
+
 The useful design question is what happens when one step fails. For example, a store needs a clear owner for an order that has been paid for but cannot be fulfilled. Define the next action and the customer communication before automating that handoff.
 
 > Replace this example with your article. Review every metadata value before saving, including the slug, canonical URL, and image URLs. The example image URLs are placeholders; replace them with real media URLs or clear those fields.

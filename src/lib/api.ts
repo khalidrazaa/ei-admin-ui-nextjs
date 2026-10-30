@@ -55,11 +55,13 @@ export async function apiFetch<T>(
   let data: unknown;
   try {
     if (controller.signal.aborted) throw controller.signal.reason;
+    const multipart = typeof FormData !== "undefined" && options.body instanceof FormData;
     res = await fetch(`${API_BASE}${endpoint}`, {
       ...options,
       signal: controller.signal,
       headers: {
-        "Content-Type": "application/json",
+        // The browser supplies the multipart boundary for FormData uploads.
+        ...(!multipart ? { "Content-Type": "application/json" } : {}),
         ...(options.headers || {}),
       },
       credentials: "include",

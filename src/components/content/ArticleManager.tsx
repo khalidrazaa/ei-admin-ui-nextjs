@@ -1,9 +1,10 @@
 "use client";
 
-import { type ChangeEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
 import ArticleEvidence from "@/components/content/ArticleEvidence";
 import ArticleMarkdown from "@/components/content/ArticleMarkdown";
+import ArticleFileUpload from "@/components/content/ArticleFileUpload";
 
 import ProtectedPageShell from "@/components/layout/ProtectedPageShell";
 import Button from "@/components/ui/Button";
@@ -18,12 +19,15 @@ import {
   getArticle,
   getArticleCategories,
   getArticlePage,
+  importArticleFiles,
   type ArticlePage,
   updateArticle,
 } from "@/lib/services/articles";
 import { getHostSites } from "@/lib/services/host-sites";
 import { formatCsvList, parseCsvList } from "@/lib/utils/csvList";
 import { parseMarkdownDraft, validateMarkdownFile } from "@/lib/utils/markdownDraft";
+import { articleImportFingerprint, getArticleImageMappings, imageMarkdown, validateImageFiles } from "@/lib/utils/articleFiles";
+import { findMarkdownImages } from "@/lib/utils/markdownImages";
 import { Article } from "@/types/types";
 
 const DEFAULT_HOST_SITE = "explainit.tech";
@@ -381,6 +385,10 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [importFeedback, setImportFeedback] = useState<{ filename: string; warnings: string[] } | null>(null);
+  const [pendingImages, setPendingImages] = useState<File[]>([]);
+  const [imageMappings, setImageMappings] = useState<Record<string, string>>({});
+  const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
+  const [markdownFileBytes, setMarkdownFileBytes] = useState(0);
   const [editorStep, setEditorStep] = useState<EditorStep>(1);
   const [loadingArticle, setLoadingArticle] = useState(false);
   const [articleLoadError, setArticleLoadError] = useState<string | null>(null);
@@ -404,8 +412,18 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
   const slugEditedRef = useRef(false);
   const markdownFileInputRef = useRef<HTMLInputElement | null>(null);
   const importingRef = useRef(false);
+  const importRequestRef = useRef<{ fingerprint: string; requestId: string; files: File[] } | null>(null);
   const deletionControlsDisabled = deleting || deleteTarget !== null || importing || loadingList || search.trim() !== debouncedSearch;
   const editorControlsDisabled = saving || importing;
+  const imageMatches = useMemo(() => getArticleImageMappings(markdownSource, pendingImages, imageMappings), [markdownSource, pendingImages, imageMappings]);
+  const hasMarkdownImages = useMemo(() => findMarkdownImages(markdownSource).length > 0, [markdownSource]);
+
+  useEffect(() => {
+    const urls: Record<string, string> = Object.create(null);
+    for (const image of pendingImages) urls[image.name] = URL.createObjectURL(image);
+    setPreviewUrls(urls);
+    return () => { for (const url of Object.values(urls)) URL.revokeObjectURL(url); };
+  }, [pendingImages]);
 
   const categoryStats = articlePage?.categories ?? [];
   const resolvedCategoryOptions = useMemo(() =>
@@ -658,6 +676,7 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
     if (savingRef.current || importingRef.current || deletionInProgressRef.current || deleteTarget) return;
     setImportError(null);
     setImportFeedback(null);
+    clearPendingFiles();
     setNewDraft(false);
     setCustomCategoryMode(false);
     setSelectedArticleId(articleId);
@@ -680,58 +699,99 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
     setMessageType(null);
     setImportError(null);
     setImportFeedback(null);
+    clearPendingFiles();
     slugEditedRef.current = false;
     contentHtmlRef.current = "";
     if (contentEditorRef.current) contentEditorRef.current.innerHTML = "";
   }
 
   function closeEditor() {
-    if (importingRef.current || (newDraft && savingRef.current)) return;
+    if (importingRef.current || (savingRef.current && (newDraft || pendingImages.length > 0))) return;
     setImportError(null);
     setImportFeedback(null);
+    clearPendingFiles();
     setNewDraft(false);
     setCustomCategoryMode(false);
     setSelectedArticleId(null);
     setEditorStep(1);
   }
 
-  async function handleMarkdownUpload(event: ChangeEvent<HTMLInputElement>) {
-    const input = event.currentTarget;
-    const file = input.files?.[0];
-    input.value = "";
-    if (!file || !isDraft || selectedArticleId !== null || savingRef.current || importingRef.current || deletionInProgressRef.current || deleteTarget) return;
+  function clearPendingFiles() {
+    setPendingImages([]);
+    setImageMappings({});
+    setMarkdownFileBytes(0);
+    importRequestRef.current = null;
+  }
+
+  async function handleArticleFiles(files: File[]) {
+    if (!files.length || savingRef.current || importingRef.current || deletionInProgressRef.current || deleteTarget) return;
     importingRef.current = true;
     setImporting(true);
     setImportError(null);
     try {
-      validateMarkdownFile(file);
-      const bytes = await file.arrayBuffer();
-      let source: string;
-      try {
-        source = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-      } catch {
-        throw new Error("The Markdown file must use UTF-8 encoding. Save it as UTF-8 and try again.");
+      const markdownFiles = files.filter((file) => /\.(md|markdown)$/i.test(file.name));
+      if (markdownFiles.length > 1) throw new Error("Choose one Markdown file with its SVG/PNG diagrams.");
+      const markdownFile = markdownFiles[0];
+      if (markdownFile && (!isDraft || selectedArticleId !== null)) {
+        throw new Error("To import a Markdown article, open New draft. This article accepts SVG/PNG diagrams.");
       }
-      const { payload, warnings } = parseMarkdownDraft(source, file.name);
-      setNewDraft(true);
-      setCustomCategoryMode(false);
-      setEditorForm(toEditorForm(payload));
-      setEditorStep(1);
-      setArticleLoadError(null);
+      if (markdownFile) validateMarkdownFile(markdownFile);
+      const addedImages = files.filter((file) => file !== markdownFile);
+      validateImageFiles(addedImages);
+      const byName = new Map(pendingImages.map((file) => [file.name, file]));
+      for (const image of addedImages) byName.set(image.name, image);
+      const images = [...byName.values()];
+      validateImageFiles(images, markdownFile?.size ?? markdownFileBytes);
+      let imported: ReturnType<typeof parseMarkdownDraft> | undefined;
+      if (markdownFile) {
+        const bytes = await markdownFile.arrayBuffer();
+        let source: string;
+        try { source = new TextDecoder("utf-8", { fatal: true }).decode(bytes); }
+        catch { throw new Error("The Markdown file must use UTF-8 encoding. Save it as UTF-8 and try again."); }
+        imported = parseMarkdownDraft(source, markdownFile.name);
+      }
+      if (selectedArticleId === null) setNewDraft(true);
+      if (imported && markdownFile) {
+        setCustomCategoryMode(false);
+        setEditorForm(toEditorForm(imported.payload));
+        setEditorStep(1);
+        setArticleLoadError(null);
+        setMarkdownSource(imported.payload.content);
+        setMarkdownFileBytes(markdownFile.size);
+        slugEditedRef.current = true;
+        contentHtmlRef.current = "";
+        if (contentEditorRef.current) contentEditorRef.current.innerHTML = "";
+        setImportFeedback({ filename: markdownFile.name, warnings: imported.warnings });
+      } else if (!sourceMode) {
+        syncContentFromEditor();
+        setMarkdownSource(editorHtmlToMarkdown(contentHtmlRef.current));
+      }
       setSourceMode(true);
-      setMarkdownSource(payload.content);
+      setPendingImages(images);
+      importRequestRef.current = null;
       setMessage(null);
       setMessageType(null);
-      slugEditedRef.current = true;
-      contentHtmlRef.current = "";
-      if (contentEditorRef.current) contentEditorRef.current.innerHTML = "";
-      setImportFeedback({ filename: file.name, warnings });
     } catch (err) {
-      setImportError(err instanceof Error ? err.message : "Unable to read this Markdown file. Try again.");
+      setImportError(err instanceof Error ? err.message : "Unable to read these article files. Try again.");
     } finally {
       importingRef.current = false;
       setImporting(false);
     }
+  }
+
+  function removePendingImage(filename: string) {
+    if (savingRef.current || importingRef.current) return;
+    setPendingImages((current) => current.filter((file) => file.name !== filename));
+    setImageMappings((current) => Object.fromEntries(Object.entries(current).filter(([, value]) => value !== filename)));
+    importRequestRef.current = null;
+    setImportError(null);
+  }
+
+  function insertPendingImage(filename: string) {
+    if (savingRef.current || importingRef.current) return;
+    setMarkdownSource((current) => `${current.trimEnd()}\n\n${imageMarkdown(filename)}\n`);
+    setSourceMode(true);
+    setImportError(null);
   }
 
   function selectCategory(category: string) {
@@ -842,6 +902,15 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
 
     syncContentFromEditor();
 
+    if (sourceMode && imageMatches.missing.length) {
+      setImportError(`Upload or match these diagram files before saving: ${imageMatches.missing.join(", ")}.`);
+      return;
+    }
+    if (pendingImages.length && imageMatches.unused.length) {
+      setImportError(`Insert or remove these unused diagram files before saving: ${imageMatches.unused.join(", ")}.`);
+      return;
+    }
+
     savingRef.current = true;
     try {
       setSaving(true);
@@ -849,11 +918,28 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
       setMessageType("info");
 
       const payload = { ...toUpdatePayload(editorForm, sourceMode ? "" : contentHtmlRef.current), ...(sourceMode ? { content: markdownSource } : {}) };
-      const updated = newDraft
-        ? await createDraft({ ...payload, title: editorForm.title.trim(), slug: editorForm.slug.trim(), content: payload.content ?? "", status: "draft" })
-        : await updateArticle(selectedArticleId!, { ...payload, expected_updated_at: selectedArticle?.updated_at ?? null });
+      const articlePayload = newDraft
+        ? { ...payload, title: editorForm.title.trim(), slug: editorForm.slug.trim(), content: payload.content ?? "", status: "draft" as const }
+        : { ...payload, expected_updated_at: selectedArticle?.updated_at ?? null };
+      let updated: Article;
+      if (pendingImages.length) {
+        const fingerprint = articleImportFingerprint(articlePayload, pendingImages, imageMatches.manifest);
+        const previous = importRequestRef.current;
+        if (!previous || previous.fingerprint !== fingerprint || !previous.files.every((file, index) => file === pendingImages[index])) {
+          importRequestRef.current = { fingerprint, requestId: crypto.randomUUID(), files: [...pendingImages] };
+        }
+        updated = await importArticleFiles(newDraft ? null : selectedArticleId, articlePayload, pendingImages, imageMatches.manifest, importRequestRef.current!.requestId);
+      } else {
+        updated = newDraft
+          ? await createDraft({ ...payload, title: editorForm.title.trim(), slug: editorForm.slug.trim(), content: payload.content ?? "", status: "draft" })
+          : await updateArticle(selectedArticleId!, articlePayload);
+      }
 
       setSelectedArticle(updated);
+      setMarkdownSource(updated.content ?? "");
+      clearPendingFiles();
+      setImportFeedback(null);
+      setImportError(null);
       setEditorForm(toEditorForm(updated));
       setCustomCategoryMode(false);
       const savedCategory = updated.category?.trim();
@@ -976,24 +1062,18 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
     },
   ];
 
-  const markdownUploadControls = <div className="flex flex-wrap items-center gap-3">
-    <Button type="button" onClick={() => markdownFileInputRef.current?.click()} disabled={editorControlsDisabled || deletionControlsDisabled}>
-      {importing ? "Reading Markdown..." : "Upload Markdown"}
-    </Button>
-    <a href="/examples/draft-template.md" download className="text-sm text-blue-700 underline">Download template</a>
-  </div>;
+  const articleUploadControls = <ArticleFileUpload
+    inputRef={markdownFileInputRef} disabled={editorControlsDisabled || deletionControlsDisabled}
+    reading={importing} allowMarkdown={isDraft && selectedArticleId === null}
+    markdownFilename={importFeedback?.filename} images={pendingImages} previewUrls={previewUrls}
+    references={imageMatches.references} manifest={imageMatches.manifest} missing={imageMatches.missing} unused={imageMatches.unused}
+    error={importError} onFiles={(files) => void handleArticleFiles(files)} onRemove={removePendingImage}
+    onMapping={(destination, filename) => { if (!savingRef.current && !importingRef.current) { setImageMappings((current) => ({ ...current, [destination]: filename })); setImportError(null); } }}
+    onInsert={insertPendingImage}
+  />;
 
   return (
     <>
-      {isDraft && <input
-        ref={markdownFileInputRef}
-        type="file"
-        accept=".md,.markdown,text/markdown,text/x-markdown"
-        aria-label="Upload Markdown draft"
-        hidden
-        disabled={editorControlsDisabled || deletionControlsDisabled}
-        onChange={(event) => void handleMarkdownUpload(event)}
-      />}
       <ProtectedPageShell
         title={isDraft ? "Drafts" : "Articles"}
         description={isDraft ? "Review drafted articles before publishing" : undefined}
@@ -1044,8 +1124,7 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
         }
         contentClassName="flex-1 overflow-y-auto p-4 lg:p-6"
       >
-        {importError && <div role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">{importError}</div>}
-        {importing && <p role="status" className="mb-4 text-sm text-gray-500">Reading Markdown file...</p>}
+        {importing && <p role="status" className="mb-4 text-sm text-gray-500">Reading article files...</p>}
         {loadingList && !articlePage ? (
           <div className="rounded-xl border border-gray-200 bg-white p-6 text-sm text-gray-500 shadow-sm">
             {isDraft ? "Loading drafted articles..." : "Loading articles..."}
@@ -1066,7 +1145,7 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-200 px-4 py-3">
               <div className="flex flex-wrap items-center gap-3">
                 {isDraft && <Button type="button" onClick={startNewDraft} disabled={deletionControlsDisabled}>New draft</Button>}
-                {isDraft && markdownUploadControls}
+                {isDraft && articleUploadControls}
                 <p className="text-xs text-gray-500">
                   {selectedCategory === "all" ? "All Categories" : selectedCategory} |{" "}
                   {articlePage?.total ?? 0} article
@@ -1225,7 +1304,7 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
                   <button
                     type="button"
                     onClick={closeEditor}
-                    disabled={importing || (saving && newDraft)}
+                    disabled={importing || (saving && (newDraft || pendingImages.length > 0))}
                     className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
                   >
                     Back To Table
@@ -1267,14 +1346,13 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
             </div>
 
             {selectedArticle && <ArticleEvidence articleId={selectedArticle.id} content={selectedArticle.content ?? ""} />}
-            {newDraft && <div className="space-y-3 rounded-xl border border-gray-200 bg-white p-4">
-              {markdownUploadControls}
-              <p className="text-sm text-gray-500">Write your article or upload a UTF-8 .md or .markdown file (up to 2 MiB). YAML front matter fills the metadata. Review both steps, then choose Save Draft.</p>
+            <div className="space-y-3">
+              {articleUploadControls}
               {importFeedback && <div role="status" className="space-y-2 text-sm text-gray-700">
                 <p>Loaded {importFeedback.filename}. Review the article and metadata, then save your draft.</p>
                 {importFeedback.warnings.length > 0 && <ul className="list-disc space-y-1 pl-5 text-amber-800">{importFeedback.warnings.map((warning, index) => <li key={index}>{warning}</li>)}</ul>}
               </div>}
-            </div>}
+            </div>
             <fieldset disabled={editorControlsDisabled} className="min-w-0">
             {editorStep === 1 ? (
               <div className="space-y-4 rounded-xl border border-gray-200 bg-white p-4 lg:p-6 shadow-sm">
@@ -1291,16 +1369,18 @@ export default function ArticleManager({ status = "published", sidebarExtra, onR
 
                 <div className="space-y-2">
                   <span className="text-xs font-medium uppercase tracking-wide text-gray-500">
-                    Content (rich text)
+                    Content ({sourceMode ? "Markdown" : "rich text"})
                   </span>
 
                   <div className="overflow-hidden rounded-lg border border-gray-300">
-                    <label className="flex gap-2 p-3"><input type="checkbox" checked={sourceMode} onChange={(e) => {
+                    <label className="flex gap-2 p-3"><input type="checkbox" checked={sourceMode} disabled={editorControlsDisabled || (sourceMode && hasMarkdownImages)} onChange={(e) => {
+                      if (savingRef.current || importingRef.current || (!e.target.checked && hasMarkdownImages)) return;
                       if (e.target.checked) setMarkdownSource(editorHtmlToMarkdown(contentHtmlRef.current));
                       else { contentHtmlRef.current = markdownToEditorHtml(markdownSource); if(contentEditorRef.current) contentEditorRef.current.innerHTML = contentHtmlRef.current; }
                       setSourceMode(e.target.checked);
                     }} />Edit Markdown (preserves diagrams and tables)</label>
-                    {sourceMode && <div className="p-3"><textarea aria-label="Article Markdown" className="min-h-[420px] w-full rounded border p-3 font-mono text-sm" value={markdownSource} onChange={e=>setMarkdownSource(e.target.value)} /><details><summary>Reader preview</summary><ArticleMarkdown content={markdownSource} /></details></div>}
+                    {sourceMode && hasMarkdownImages && <p className="px-3 text-xs text-gray-500">This article stays in Markdown mode to preserve its image references.</p>}
+                    {sourceMode && <div className="p-3"><textarea aria-label="Article Markdown" className="min-h-[420px] w-full rounded border p-3 font-mono text-sm" value={markdownSource} onChange={e=>{ if (!savingRef.current && !importingRef.current) setMarkdownSource(e.target.value); }} /><details><summary>Reader preview</summary><ArticleMarkdown content={markdownSource} resolveImage={(destination) => previewUrls[imageMatches.manifest[destination]]} /></details></div>}
                     <div style={{display: sourceMode ? "none" : undefined}}
                       onMouseDown={(event) => event.preventDefault()}
                       className="flex flex-wrap gap-2 border-b border-gray-200 bg-gray-50 p-2">
