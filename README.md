@@ -55,13 +55,15 @@ The list uses `GET /v1/admin/articles?page=1&size=20&status=published` (or `stat
 
 Editor category options use the protected `GET /v1/admin/articles/categories` endpoint, which returns category names without loading article bodies. Deploy that backend endpoint before this frontend update.
 
-### Import a Markdown draft
+### Import an article and its diagrams
 
-Use **Upload Markdown** in **Drafts** or **New draft** to load a local `.md` or `.markdown` file. Files must use UTF-8 and be at most 2 MiB. Download the [complete draft template](public/examples/draft-template.md), also available from **Download template** in the importer.
+Use **Upload article files** in **Drafts** or **New draft** to select or drop one `.md`/`.markdown` file together with its `.svg`/`.png` diagrams. Files may also be added to the same area in separate selections. Markdown must use UTF-8 and be at most 2 MiB; each diagram may be up to 5 MiB, with at most 10 diagrams and 50 MiB total. Download the [complete draft template](public/examples/draft-template.md), also available from **Download template** in the importer.
 
-The file can contain plain Markdown, or YAML front matter between `---` lines at the beginning followed by the Markdown body. Import fills a new draft form and opens its content in Markdown source mode. Use **Next Step** to review the metadata, then **Save Draft** to persist it. Uploading alone does not save or publish an article.
+The file can contain plain Markdown, or YAML front matter between `---` lines at the beginning followed by the Markdown body. Selection fills a new draft form and opens its content in Markdown source mode. Review the article preview and image matches, use **Next Step** to review metadata, then choose **Save Draft**. The reviewed Markdown and diagrams upload together in one request; file selection alone does not save or publish an article.
 
-Saved articles reopen in Markdown source mode so metadata edits preserve images, lists, blockquotes, and other Markdown formatting. The editor can still switch to rich text when needed.
+Reference a diagram using `![Architecture](diagrams/architecture.svg)` or a reference-style image. Exact path and filename matches take priority. If only the format differs, `architecture.png` also matches an uploaded `architecture.svg` (and vice versa) when the diagram name has a single match. Use the per-reference dropdown when a file has a different name or the match is ambiguous. For a diagram without a Markdown reference, choose **Insert image** to append it to the article and edit its alt text/position in the source. Resolve missing files and insert or remove unused files before saving. Existing absolute HTTP(S) and site-relative media URLs are preserved unless explicitly mapped to a replacement. Duplicate selected filenames must be renamed. Failed saves retain the selection and content for retry.
+
+Saved articles reopen in Markdown source mode so metadata edits preserve images, lists, blockquotes, and other Markdown formatting. Articles containing image references stay in Markdown mode because the rich-text converter cannot preserve them. The same upload area in a saved article accepts additional/replacement SVG/PNG diagrams; save its changes to persist them.
 
 Supported front-matter fields:
 
@@ -74,7 +76,9 @@ Supported front-matter fields:
 
 Use YAML lists for `tags` and `keywords`, a boolean for `is_featured`, and a non-negative integer in minutes for `reading_time`. Omit `reading_time` to let the backend estimate it when saving. If `title` is missing, the importer uses the first Markdown H1, then the filename. If `slug` is missing, it is generated from the title. Review the slug before saving; it must be unique.
 
-Place article content after the closing `---`, rather than in a `content` front-matter field. IDs, timestamps, status, and private generation/review fields are ignored with a warning. Every import starts a new unpublished draft; it does not update an existing article or recreate a topic's research history. Image URLs reference existing media; the Markdown upload does not upload images.
+Place article content after the closing `---`, rather than in a `content` front-matter field. IDs, timestamps, status, and private generation/review fields are ignored with a warning. A Markdown import starts a new unpublished draft; it does not recreate a topic's research history. Featured/Open Graph image metadata remains separate from inline diagrams.
+
+Combined saves use protected multipart `POST /v1/admin/articles/import` and `PUT /v1/admin/articles/{id}/import`. Deploy backend media migrations, persistent VPS storage and `MEDIA_PUBLIC_BASE_URL` configuration before this frontend. Uploaded SVG is validated by the backend; unsupported active/embedded content is rejected with an explanation. Diagram previews use image elements and never insert SVG markup into the page. Images remain on the VPS across application deployments. Public article content still comes from a build-time snapshot: after publishing or replacing a diagram, rebuild and deploy `ei-ui-nextjs` to update the live article.
 
 [`apiFetch`](src/lib/api.ts) defaults to 30-second timeouts and reports unreachable APIs/invalid responses. Long-running service calls opt out with `timeoutMs: 0`.
 

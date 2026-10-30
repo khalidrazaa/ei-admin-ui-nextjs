@@ -38,7 +38,7 @@ export async function getArticleCategories(): Promise<string[]> {
   return apiFetch<string[]>("/admin/articles/categories", { method: "GET" });
 }
 
-type DraftCreatePayload = Pick<Article, "title" | "slug"> &
+export type DraftCreatePayload = Pick<Article, "title" | "slug"> &
   Partial<Omit<Article, "id" | "created_at" | "updated_at" | "published_at" | "drafted_at" | "status" | "content">> & {
     content: string;
     status?: "draft";
@@ -76,6 +76,25 @@ export async function updateArticle(
     method: "PUT",
     body: JSON.stringify(payload),
   }) as Promise<Article>;
+}
+
+export async function importArticleFiles(
+  articleId: number | null,
+  article: DraftCreatePayload | (Partial<Article> & { expected_updated_at?: string | null }),
+  images: File[],
+  manifest: Record<string, string>,
+  requestId: string,
+): Promise<Article> {
+  const body = new FormData();
+  body.append("article", JSON.stringify(article));
+  body.append("manifest", JSON.stringify(manifest));
+  body.append("request_id", requestId);
+  for (const image of images) body.append("images", image, image.name);
+  return apiFetch<Article>(articleId === null ? "/admin/articles/import" : `/admin/articles/${articleId}/import`, {
+    method: articleId === null ? "POST" : "PUT",
+    body,
+    timeoutMs: 120_000,
+  });
 }
 
 export async function deleteArticle(articleId: number): Promise<ArticleDeleteResult> {

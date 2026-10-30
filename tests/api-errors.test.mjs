@@ -13,7 +13,7 @@ function loadApi(fetch, timers = {}) {
   const context = {
     exports: {},
     process: { env: { NEXT_PUBLIC_API_BASE_URL: "http://localhost:8000/v1" } },
-    AbortController, AbortSignal, fetch, setTimeout, clearTimeout,
+    AbortController, AbortSignal, FormData, fetch, setTimeout, clearTimeout,
     ...timers,
   };
   vm.runInNewContext(compiledApi, context);
@@ -22,6 +22,19 @@ function loadApi(fetch, timers = {}) {
 
 const jsonResponse = (data) => new Response(JSON.stringify(data), {
   headers: { "Content-Type": "application/json" },
+});
+
+test("multipart uploads leave the boundary to the browser and retain credentials and custom headers", async () => {
+  const body = new FormData();
+  body.append("article", JSON.stringify({ title: "Diagram article" }));
+  const api = loadApi(async (url, options) => {
+    assert.equal(options.body, body);
+    assert.equal(options.headers["Content-Type"], undefined);
+    assert.equal(options.headers["X-Upload-Test"], "batch");
+    assert.equal(options.credentials, "include");
+    return jsonResponse({ id: 1 });
+  });
+  assert.deepEqual(await api.apiFetch("/admin/articles/import", { method: "POST", body, headers: { "X-Upload-Test": "batch" } }), { id: 1 });
 });
 
 function waitForAbort(signal) {

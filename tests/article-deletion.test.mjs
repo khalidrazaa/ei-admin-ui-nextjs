@@ -26,6 +26,9 @@ const compiledTable = compile("../src/components/ui/Table.tsx");
 const compiledPagination = compile("../src/components/ui/VideoFilters.tsx");
 const compiledMarkdownDraft = compile("../src/lib/utils/markdownDraft.ts");
 const compiledCsvList = compile("../src/lib/utils/csvList.ts");
+const compiledArticleFileUpload = compile("../src/components/content/ArticleFileUpload.tsx");
+const markdownImages = loadUtility(compile("../src/lib/utils/markdownImages.ts"));
+const articleFiles = loadUtility(compile("../src/lib/utils/articleFiles.ts"), { "./markdownImages": markdownImages });
 
 function loadUtility(source, modules = {}) {
   const context = { exports: {}, Error, require: (name) => {
@@ -198,9 +201,9 @@ function* walk(node, ancestors = []) {
 
 // Run the real page with deterministic hooks and JSX nodes. Dependencies are
 // mocked at module boundaries; assertions use rendered controls and events.
-async function createPage({ deleteResult, deleteFailures = [], deletePromise, updatePromise, createFailures = [], createPromise, editorDocument, listFailures = [], articleFailures = [], categoryFailures = [], search = "", status = "published", sidebarExtra, onRefresh, initialArticles = articles, unfilteredList = false } = {}) {
+async function createPage({ deleteResult, deleteFailures = [], deletePromise, updatePromise, createFailures = [], createPromise, importFailures = [], importPromise, editorDocument, listFailures = [], articleFailures = [], categoryFailures = [], search = "", status = "published", sidebarExtra, onRefresh, initialArticles = articles, unfilteredList = false } = {}) {
   const slots = [];
-  const calls = { single: [], bulk: [], edited: [], updated: [], created: [], listed: 0, listStatuses: [], listParams: [], filePickers: 0, categoryLoads: 0 };
+  const calls = { single: [], bulk: [], edited: [], updated: [], created: [], imported: [], previewed: [], revoked: [], listed: 0, listStatuses: [], listParams: [], filePickers: 0, categoryLoads: 0 };
   const storedArticles = initialArticles.map((article) => ({ ...article }));
   let cursor = 0;
   let dirty = true;
@@ -212,6 +215,7 @@ async function createPage({ deleteResult, deleteFailures = [], deletePromise, up
   let Button;
   let Table;
   let PaginationControls;
+  let FileUpload;
   const searchTimers = new Map();
   let timerId = 0;
   const dependenciesEqual = (a, b) => a && b && a.length === b.length && a.every((value, index) => Object.is(value, b[index]));
@@ -252,7 +256,7 @@ async function createPage({ deleteResult, deleteFailures = [], deletePromise, up
     },
   };
   const jsx = (type, props, key) => {
-    if (type === Button || type === Table || type === PaginationControls) return type(props);
+    if (type === Button || type === Table || type === PaginationControls || type === FileUpload) return type(props);
     if (props.ref && !props.ref.current) props.ref.current = {
       indeterminate: false, innerHTML: "",
       click: () => { calls.filePickers += 1; },
@@ -266,6 +270,8 @@ async function createPage({ deleteResult, deleteFailures = [], deletePromise, up
   Table = tableModule.default;
   const paginationModule = loadUtility(compiledPagination, { "@/components/ui/Button": buttonModule, "react/jsx-runtime": jsxRuntime });
   PaginationControls = paginationModule.VideoPaginationControls;
+  const uploadModule = loadUtility(compiledArticleFileUpload, { "@/components/ui/Button": buttonModule, "react/jsx-runtime": jsxRuntime });
+  FileUpload = uploadModule.default;
   async function remove(ids) {
     const failure = deleteFailures.shift();
     if (failure) throw failure;
@@ -278,6 +284,7 @@ async function createPage({ deleteResult, deleteFailures = [], deletePromise, up
   const modules = {
     "@/components/content/ArticleEvidence": { __esModule: true, default: () => null },
     "@/components/content/ArticleMarkdown": { __esModule: true, default: () => null },
+    "@/components/content/ArticleFileUpload": uploadModule,
     react: hooks,
     "react/jsx-runtime": jsxRuntime,
     "@/components/layout/ProtectedPageShell": { __esModule: true, default: Shell },
@@ -289,6 +296,8 @@ async function createPage({ deleteResult, deleteFailures = [], deletePromise, up
     "@/lib/services/host-sites": { getHostSites: async () => [] },
     "@/lib/utils/markdownDraft": markdownDraft,
     "@/lib/utils/csvList": csvList,
+    "@/lib/utils/markdownImages": markdownImages,
+    "@/lib/utils/articleFiles": articleFiles,
     "@/lib/services/articles": {
       getArticleCategories: async () => {
         calls.categoryLoads += 1;
@@ -344,6 +353,20 @@ async function createPage({ deleteResult, deleteFailures = [], deletePromise, up
         storedArticles[index] = updatePromise ? await updatePromise : { ...storedArticles[index], ...payload };
         return { ...storedArticles[index] };
       },
+      importArticleFiles: async (id, payload, images, manifest, requestId) => {
+        calls.imported.push({ id, payload, images, manifest, requestId });
+        const failure = importFailures.shift();
+        if (failure) throw failure;
+        if (importPromise) return await importPromise;
+        const articleId = id ?? Math.max(0, ...storedArticles.map((article) => article.id)) + 1;
+        let content = payload.content;
+        for (const [destination, filename] of Object.entries(manifest)) content = content.replace(destination, `https://api.example.com/v1/media/articles/${articleId}/${filename}`);
+        const saved = { ...storedArticles.find((article) => article.id === id), ...payload, content, id: articleId,
+          created_at: "2026-10-18T10:00:00Z", updated_at: "2026-10-18T11:00:00Z" };
+        const existing = storedArticles.findIndex((article) => article.id === id);
+        if (existing < 0) storedArticles.push(saved); else storedArticles[existing] = saved;
+        return { ...saved };
+      },
       deleteArticle: async (id) => { calls.single.push(id); return remove([id]); },
       deleteArticles: async (ids) => { calls.bulk.push(Array.from(ids)); return remove(Array.from(ids)); },
     },
@@ -354,7 +377,8 @@ async function createPage({ deleteResult, deleteFailures = [], deletePromise, up
     set: () => { assert.fail("Opening or closing an article must stay inside its current page"); },
   });
   const context = {
-    exports: {}, Error, URLSearchParams, TextDecoder,
+    exports: {}, Error, URLSearchParams, TextDecoder, crypto: globalThis.crypto,
+    URL: { createObjectURL: (file) => { const url = `blob:https://admin.example.com/${calls.previewed.length}`; calls.previewed.push({ file, url }); return url; }, revokeObjectURL: (url) => calls.revoked.push(url) },
     document: editorDocument,
     Node: { TEXT_NODE: 3, ELEMENT_NODE: 1 },
     console: { error: () => {} },
@@ -490,9 +514,91 @@ function markdownFile(source, name = "imported-draft.md", overrides = {}) {
 
 function chooseMarkdownFile(page, file, onChange) {
   const input = { files: file ? [file] : [], value: file?.name ?? "" };
-  (onChange ?? page.find((node) => node.props["aria-label"] === "Upload Markdown draft").props.onChange)({ currentTarget: input });
+  (onChange ?? page.find((node) => node.props["aria-label"] === "Upload article files").props.onChange)({ currentTarget: input });
   return input;
 }
+
+function chooseArticleFiles(page, files) {
+  const input = { files, value: files.map((file) => file.name).join(",") };
+  page.find((node) => node.props["aria-label"] === "Upload article files").props.onChange({ currentTarget: input });
+  assert.equal(input.value, "");
+}
+
+test("combined Markdown and SVG/PNG selection reviews locally then saves one canonical article", async () => {
+  const page = await createPage({ status: "draft", initialArticles: [] });
+  const svg = markdownFile('<svg xmlns="http://www.w3.org/2000/svg"/>', 'architecture.svg');
+  const png = markdownFile('png contents checked on backend', 'workflow.png');
+  chooseArticleFiles(page, [markdownFile('# Combined\n\n![Architecture](diagrams/architecture.svg)\n\n![Steps][workflow]\n\n[workflow]: workflow.png'), svg, png]);
+  await page.settle();
+  assert.equal(page.calls.imported.length, 0);
+  assert.equal(page.calls.previewed.length, 2);
+  assert.equal(page.find((node) => node.props['aria-label'] === 'Image file for diagrams/architecture.svg').props.value, svg.name);
+  const toggle = page.find((node) => node.type === 'input' && node.props.type === 'checkbox' && node.props.checked === true);
+  assert.equal(toggle.props.disabled, true, 'Image Markdown cannot be sent through the lossy editor');
+  page.click(page.button('Save Draft'));
+  await page.settle();
+  assert.equal(page.calls.created.length, 0);
+  assert.equal(page.calls.imported.length, 1);
+  assert.deepEqual(JSON.parse(JSON.stringify(page.calls.imported[0].manifest)), {'diagrams/architecture.svg':'architecture.svg','workflow.png':'workflow.png'});
+  assert.equal(page.calls.imported[0].payload.status, 'draft');
+  assert.match(page.find((node) => node.props['aria-label'] === 'Article Markdown').props.value, /https:\/\/api.example.com\/v1\/media\/articles\/1\/architecture.svg/);
+  assert.equal(page.calls.revoked.length, 2);
+  assert.equal(page.has((node) => node.props['aria-label'] === 'Remove architecture.svg'), false);
+});
+
+test("SVG upload satisfies a PNG Markdown reference and saves the real SVG URL", async () => {
+  const page = await createPage({ status: 'draft', initialArticles: [] });
+  const svg = markdownFile('<svg xmlns="http://www.w3.org/2000/svg"/>', 'architecture.svg');
+  chooseArticleFiles(page, [markdownFile('# SVG diagram\n\n![Architecture](diagrams/architecture.png)'), svg]);
+  await page.settle();
+  const matchingFile = page.find((node) => node.props['aria-label'] === 'Image file for diagrams/architecture.png');
+  assert.equal(matchingFile.props.value, svg.name);
+  assert.equal(page.has((node) => node.type === 'span' && textContent(node) === 'Missing file'), false);
+  page.click(page.button('Save Draft'));
+  await page.settle();
+  assert.equal(page.calls.imported.length, 1);
+  assert.deepEqual(JSON.parse(JSON.stringify(page.calls.imported[0].manifest)), {'diagrams/architecture.png': 'architecture.svg'});
+  assert.match(page.find((node) => node.props['aria-label'] === 'Article Markdown').props.value, /https:\/\/api.example.com\/v1\/media\/articles\/1\/architecture.svg/);
+});
+
+test("failed combined save keeps images and request ID for retry; replacing same-size file renews it", async () => {
+  const page = await createPage({ status: 'draft', initialArticles: [], importFailures: [new Error('Storage unavailable'), new Error('Connection lost')] });
+  const image = markdownFile('first', 'a.svg', {lastModified: 1});
+  chooseArticleFiles(page, [markdownFile('# Retry\n\n![Diagram](a.svg)'), image]);
+  await page.settle();
+  page.click(page.button('Save Draft')); await page.settle();
+  const firstId = page.calls.imported[0].requestId;
+  assert.equal(page.has((node) => node.props['aria-label'] === 'Remove a.svg'), true);
+  page.click(page.button('Save Draft')); await page.settle();
+  assert.equal(page.calls.imported[1].requestId, firstId);
+  chooseArticleFiles(page, [markdownFile('other', 'a.svg', {lastModified: 1})]);
+  await page.settle();
+  page.click(page.button('Save Draft')); await page.settle();
+  assert.notEqual(page.calls.imported[2].requestId, firstId);
+});
+
+test("missing and unused diagram files block save and can be fixed in the same upload panel", async () => {
+  const page = await createPage({ status: 'draft', initialArticles: [] });
+  chooseArticleFiles(page, [markdownFile('# Match\n\n![Diagram](missing.svg)'), markdownFile('svg', 'renamed.svg')]);
+  await page.settle();
+  page.click(page.button('Save Draft')); await page.settle();
+  assert.equal(page.calls.imported.length, 0);
+  assert.match(textContent(page.find((node) => node.props.role === 'alert')), /missing.svg/);
+  page.fill(page.find((node) => node.props['aria-label'] === 'Image file for missing.svg'), 'renamed.svg');
+  page.click(page.button('Save Draft')); await page.settle();
+  assert.equal(page.calls.imported.length, 1);
+
+  chooseArticleFiles(page, [markdownFile('more svg', 'unused.svg')]); await page.settle();
+  page.click(page.button('Save Changes')); await page.settle();
+  assert.equal(page.calls.imported.length, 1);
+  assert.match(textContent(page.find((node) => node.props.role === 'alert')), /Insert or remove/);
+  page.click(page.button('Insert image')); await page.settle();
+  assert.match(page.find((node) => node.props['aria-label'] === 'Article Markdown').props.value, /!\[unused\]\(<unused.svg>\)/);
+  page.click(page.button('Save Changes')); await page.settle();
+  assert.equal(page.calls.imported.length, 2);
+  assert.equal(page.calls.imported[1].id, 1);
+  assert.equal(page.calls.imported[1].payload.expected_updated_at, '2026-10-18T11:00:00Z');
+});
 
 test("Articles table requests published articles and excludes drafts from rows, selection, and category counts", async () => {
   const page = await createPage();
@@ -1129,27 +1235,28 @@ test("pending manual draft creation blocks navigation, edits, and duplicate save
   assert.equal(page.rows().length, 2);
 });
 
-test("Markdown upload is available in the Drafts list and new editor, and opens the file picker", async () => {
+test("unified upload is available for new imports and existing article diagrams", async () => {
   const published = await createPage();
-  assert.equal(published.has((node) => node.type === "button" && textContent(node) === "Upload Markdown"), false);
-  assert.equal(published.has((node) => node.props["aria-label"] === "Upload Markdown draft"), false);
+  assert.equal(published.has((node) => node.type === "button" && textContent(node) === "Upload article files"), false);
+  assert.equal(published.has((node) => node.props["aria-label"] === "Upload article files"), false);
   const page = await createPage({ status: "draft" });
-  const input = page.find((node) => node.props["aria-label"] === "Upload Markdown draft");
+  const input = page.find((node) => node.props["aria-label"] === "Upload article files");
   assert.equal(input.props.type, "file");
   assert.equal(input.props.hidden, true);
   assert.match(input.props.accept, /\.md,\.markdown/);
   page.find((node) => node.type === "a" && node.props.href === "/examples/draft-template.md" && node.props.download);
-  page.click(page.button("Upload Markdown"));
+  page.click(page.button("Upload article files"));
   assert.equal(page.calls.filePickers, 1);
   page.click(page.button(/^New draft$/i));
   await page.settle();
-  page.click(page.button("Upload Markdown"));
+  page.click(page.button("Upload article files"));
   assert.equal(page.calls.filePickers, 2);
   page.click(page.button("Back To Table"));
   await page.settle();
   page.click(page.rows()[0]);
   await page.settle();
-  assert.equal(page.has((node) => node.type === "button" && textContent(node) === "Upload Markdown"), false);
+  assert.equal(page.has((node) => node.type === "button" && textContent(node) === "Upload article files"), true);
+  assert.equal(page.find((node) => node.props["aria-label"] === "Upload article files").props.accept.includes(".md"), false);
   // Even a delivered input event cannot replace an existing article.
   chooseMarkdownFile(page, markdownFile("# Unexpected replacement"));
   await page.settle();
@@ -1280,7 +1387,7 @@ test("invalid Markdown files preserve the existing form and allow choosing the s
   const cases = [
     [malformed, /YAML front matter is invalid/],
     [markdownFile("# Too large", "large.md", { size: 2 * 1024 * 1024 + 1, arrayBuffer: async () => { oversizedReads += 1; return new ArrayBuffer(0); } }), /2 MiB or smaller/],
-    [markdownFile("# Wrong type", "article.txt", { arrayBuffer: async () => { wrongExtensionReads += 1; return new ArrayBuffer(0); } }), /ending in \.md or \.markdown/],
+    [markdownFile("# Wrong type", "article.txt", { arrayBuffer: async () => { wrongExtensionReads += 1; return new ArrayBuffer(0); } }), /Markdown.*SVG.*PNG/],
     [markdownFile("# Unreadable", "unreadable.md", { arrayBuffer: async () => { throw new Error("The file could not be read."); } }), /The file could not be read/],
     [markdownFile("invalid", "invalid-utf8.md", { arrayBuffer: async () => Uint8Array.from([0x23, 0x20, 0xff]).buffer }), /UTF-8/],
   ];
@@ -1311,7 +1418,7 @@ test("a pending Markdown read blocks saves, navigation, edits, and duplicate imp
   page.click(page.button(/^New draft$/i));
   await page.settle();
   page.fill(page.field("Title"), "Existing unsaved draft");
-  const onChange = page.find((node) => node.props["aria-label"] === "Upload Markdown draft").props.onChange;
+  const onChange = page.find((node) => node.props["aria-label"] === "Upload article files").props.onChange;
   const save = page.button("Save Draft").props.onClick;
   const back = page.button("Back To Table").props.onClick;
   const editTitle = page.field("Title").props.onChange;
@@ -1331,7 +1438,7 @@ test("a pending Markdown read blocks saves, navigation, edits, and duplicate imp
   assert.equal(page.button("Save Draft").props.disabled, true);
   assert.equal(page.button("Back To Table").props.disabled, true);
   assert.equal(page.button("Next Step").props.disabled, true);
-  assert.equal(page.button("Reading Markdown...").props.disabled, true);
+  assert.equal(page.button("Reading article files...").props.disabled, true);
   assert.equal(page.find((node) => node.props["aria-label"] === "Article content").props.contentEditable, false);
   resolveRead(await markdownFile("# Finished read\n\nImported after reading.").arrayBuffer());
   await page.settle();
