@@ -6,7 +6,7 @@ export type Finding = { severity: string; category: string; message: string };
 export type Research = { summary: string; ready: boolean; gaps: string[]; claims: {claim:string; evidence:string; source_urls:string[]; qualification:string}[]; sources: {url:string; title:string; checked_at:string}[] };
 export type Run = { id: string; stage: string; status: string; error: string | null; cancel_requested: boolean; attempts: number; inputs: {provider?:"openai"|"gemini";brief_version:number; version_id:number|null}; result: Research | null; created_at:string };
 export type Version = { id:number; payload:Payload; brief_version:number; created_at:string };
-export type Workspace = { article?: Record<string,unknown>|null; topic:Topic; runs:Run[]; versions:Version[]; qa:{id:number; version_id:number; report:{findings:Finding[]}}[]; article_fingerprint:string|null; article_status:string|null; overlaps:{id:string;title:string;similarity:number}[] };
+export type Workspace = { diagrams?:Record<string,{svg:string;alt:string;visual_checks?:{rendered:boolean;bounds_checked:boolean;human_review_required:boolean}}>; article?: Record<string,unknown>|null; topic:Topic; runs:Run[]; versions:Version[]; qa:{id:number; version_id:number; report:{findings:Finding[]}}[]; article_fingerprint:string|null; article_status:string|null; overlaps:{id:string;title:string;similarity:number}[] };
 export function call<T>(path:string, method="GET", body?:unknown) {
   return apiFetch<T>(`/admin/${path}`, {method, ...(body === undefined ? {} : {body:JSON.stringify(body)})});
 }
