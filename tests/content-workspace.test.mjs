@@ -8,6 +8,23 @@ import ts from 'typescript';
 const source=await readFile(new URL('../src/components/content/ContentWorkspace.tsx',import.meta.url),'utf8');
 const code=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2020,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,esModuleInterop:true}}).outputText;
 const text=node=>node==null?'':Array.isArray(node)?node.map(text).join(''):typeof node==='object'?text(node.props?.children):String(node);
+
+test('generated SVG previews use image blobs and release replaced URLs',async()=>{
+  const page=await mount();
+  await page.click('Begin research');await page.click('Generate article');
+  const name='diagram-12345678-1234-1234-1234-123456789abc.svg';
+  page.data.diagrams={[name]:{svg:'<svg xmlns="http://www.w3.org/2000/svg"/>',alt:'A flow',visual_checks:{rendered:true}}};
+  page.data.versions[0].payload.content=`![A flow](${name})`;
+  page.data.versions[0].id=2;
+  await page.refresh();
+  const preview=[...walk(page.tree)].find(node=>typeof node.props.resolveImage==='function');
+  assert.ok(preview);
+  assert.equal(preview.props.resolveImage(name),page.createdUrls.at(-1));
+  assert.match(text(page.tree),/Review its meaning, labels, and flow/);
+  assert.ok(!source.includes('dangerouslySetInnerHTML'));
+  page.data.diagrams={};await page.refresh();
+  assert.equal(page.revokedUrls.length,page.createdUrls.length);
+});
 function* walk(node){if(Array.isArray(node)){for(const x of node)yield* walk(x);}else if(node&&typeof node==='object'&&node.props){yield node;yield* walk(node.props.children);}}
 async function mount(mode='all'){
   const slots=[];let cursor=0,dirty=true,effects=[],tree;
@@ -15,12 +32,12 @@ async function mount(mode='all'){
   const hooks={
     useState(initial){const i=cursor++;if(!slots[i])slots[i]={value:typeof initial==='function'?initial():initial};return[slots[i].value,v=>{const n=typeof v==='function'?v(slots[i].value):v;if(!Object.is(n,slots[i].value)){slots[i].value=n;dirty=true;}}];},
     useRef(initial){const i=cursor++;return(slots[i]??={current:initial});},
-    useEffect(fn,deps){const i=cursor++;if(!equal(slots[i]?.deps,deps)){slots[i]={deps};effects.push(fn);}},
+    useEffect(fn,deps){const i=cursor++;if(!equal(slots[i]?.deps,deps)){slots[i]?.cleanup?.();slots[i]={deps};effects.push(()=>{slots[i].cleanup=fn();});}},
     useCallback(fn,deps){const i=cursor++;if(!equal(slots[i]?.deps,deps))slots[i]={deps,fn};return slots[i].fn;},
   };
   const brief={audience:'CEOs and managers',scenario:'Retail',scope:'Do we need a warehouse?',exclusions:'',target_words:800,diagram:true,source_urls:[]};
   const data={topic:{topic_id:'EXPLAINIT-011',title:'Reporting',reader_question:brief.scope,track:'Architecture',status:'Idea',archived:false,version:1,brief_version:0,brief:{},article_id:null},runs:[],versions:[],qa:[],article_fingerprint:null,article_status:null,overlaps:[]};
-  const calls=[];let interval;
+  const calls=[],createdUrls=[],revokedUrls=[];let interval;
   const call=async(path,method='GET',body)=>{
     calls.push({path,method,body});
     if(path==='content-topics')return[structuredClone(data.topic)];
@@ -40,12 +57,12 @@ async function mount(mode='all'){
   };
   const jsx={jsx:(type,props,key)=>({type,props:props||{},key}),jsxs:(type,props,key)=>({type,props:props||{},key})};
   const modules={react:hooks,'react/jsx-runtime':jsx,'next/link':{default:'a'},'./ArticleMarkdown':{default:()=>null},'@/components/ui/Button':'button','@/components/layout/ProtectedPageShell':{default:'shell'},'@/components/ui/Sidebar':{default:'sidebar'},'@/lib/services/content-workflow':{call,getWorkspace:async()=>{calls.push({path:'workspace-read'});return structuredClone(data);},topicPath:id=>`content-topics/${id}`}};
-  const context={exports:{},URLSearchParams,crypto:{randomUUID},Date,JSON,Number,window:{location:{search:'?topic=EXPLAINIT-011'},addEventListener(){},removeEventListener(){},confirm:()=>true},setInterval:fn=>{interval=fn;return 1;},clearInterval(){},require:n=>{assert.ok(n in modules,n);return modules[n];}};
+  const context={exports:{},Blob,URL:{createObjectURL(blob){assert.equal(blob.type,'image/svg+xml');const url='blob:https://admin.example/'+createdUrls.length;createdUrls.push(url);return url;},revokeObjectURL(url){revokedUrls.push(url);}},URLSearchParams,crypto:{randomUUID},Date,JSON,Number,window:{location:{search:'?topic=EXPLAINIT-011'},addEventListener(){},removeEventListener(){},confirm:()=>true},setInterval:fn=>{interval=fn;return 1;},clearInterval(){},require:n=>{assert.ok(n in modules,n);return modules[n];}};
   vm.runInNewContext(code,context);
   async function settle(){for(let j=0;j<8;j++){while(dirty){dirty=false;cursor=0;effects=[];tree=context.exports.default({mode});for(const effect of effects)effect();}await new Promise(r=>setImmediate(r));}}
   await settle();
   const findButton=label=>[...walk(tree)].find(n=>n.type==='button'&&text(n)===label);
-  return {calls,data,settle,setMode:async next=>{mode=next;dirty=true;await settle();},poll:async()=>{await interval();await settle();},refresh:async()=>{findButton('Refresh workspace').props.onClick();await settle();},get tree(){return tree;},async click(label){const b=findButton(label);assert.ok(b,`Missing ${label}`);assert.ok(!b.props.disabled,`${label} disabled`);b.props.onClick();await settle();},button:findButton};
+  return {calls,data,createdUrls,revokedUrls,settle,setMode:async next=>{mode=next;dirty=true;await settle();},poll:async()=>{await interval();await settle();},refresh:async()=>{findButton('Refresh workspace').props.onClick();await settle();},get tree(){return tree;},async click(label){const b=findButton(label);assert.ok(b,`Missing ${label}`);assert.ok(!b.props.disabled,`${label} disabled`);b.props.onClick();await settle();},button:findButton};
 }
 test('research and generation save workspace only; explicit Save to Drafts creates article',async()=>{
   const page=await mount();
