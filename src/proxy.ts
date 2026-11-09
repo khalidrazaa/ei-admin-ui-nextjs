@@ -19,5 +19,5 @@ export function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next|favicon.ico).*)"], // applies only to /admin/*
+  matcher: ["/((?!_next|favicon.ico|icon\\.svg$|explainit-icon-outline\\.svg$).*)"], // applies only to /admin/*
 };
