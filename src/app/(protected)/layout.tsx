@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { Menu, X } from "lucide-react";
@@ -43,7 +44,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       <header className="relative z-30 h-14 shrink-0 bg-gray-900 text-white flex items-center justify-between px-4 lg:px-6">
         
         {/* Left: Logo */}
-        <div className="font-bold text-lg">Admin Panel</div>
+        <Link href="/dashboard" className="flex shrink-0 items-center gap-2" aria-label="ExplainIT admin dashboard">
+          <Image
+            src="/explainit-icon-outline.svg"
+            alt=""
+            width={40}
+            height={40}
+            unoptimized
+            className="size-10 shrink-0 object-contain"
+          />
+          <span className="font-bold text-lg">Admin Panel</span>
+        </Link>
 
         {/* Center: Nav */}
         <nav aria-label="Main navigation" className="hidden lg:flex gap-6">
